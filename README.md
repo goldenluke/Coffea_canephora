@@ -461,7 +461,7 @@ MIT License
 
 ## Author
 
-Lucas Dourado
+Lucas Amaral Dourado
 
 ---
 
