@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+*.csv
+*.bed
+
+.env
+venv/
+data/*.fa
+data/*.gff

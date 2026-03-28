@@ -1,0 +1,21 @@
+[project]
+name = "metastablex"
+version = "0.1.6"
+description = "Structural dynamics framework for complex systems"
+readme = "README.md"
+authors = [{name="Lucas Amaral Dourado"}]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+
+dependencies = [
+    "torch",
+    "pandas",
+    "numpy",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]

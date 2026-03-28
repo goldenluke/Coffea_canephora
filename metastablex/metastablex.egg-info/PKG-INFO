@@ -1,0 +1,232 @@
+Metadata-Version: 2.4
+Name: metastablex
+Version: 0.1.5
+Summary: Structural dynamics framework for complex systems
+Author: Lucas Amaral Dourado
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: torch
+Requires-Dist: pandas
+Requires-Dist: numpy
+
+<h1 align="center">🧠 MetastableX</h1>
+<h3 align="center">A Unified Computational Framework for Metastability and Critical Transitions in Complex Systems</h3>
+
+<p align="center">
+Bridging statistical physics, machine learning and epidemiology to detect systemic instability in real-world dynamics.
+</p>
+
+<p align="center">
+⚙️ PyTorch • 📊 Time-Series • 🧠 Complex Systems • 🏥 Public Health • 🌍 Open Science • 🤖 LLM
+</p>
+
+---
+
+# 📌 Abstract
+
+Complex systems—from biological organisms to healthcare infrastructures—operate near the **edge of stability**, where small perturbations can trigger large-scale transitions.
+
+We introduce **MetastableX**, a computational framework for detecting:
+
+- metastable regimes  
+- early warning signals  
+- critical transitions  
+
+using **time-series analysis, statistical physics, and machine learning**.
+
+The framework integrates:
+
+- statistical physics (energy, entropy, criticality)  
+- machine learning (HMM, clustering, prediction)  
+- epidemiology (DATASUS, COVID detection, SIR modeling)  
+- AI interpretation (local LLM)
+
+and is validated on **real-world epidemiological data from SIH/SUS (Brazil)**.
+
+---
+
+# 🧠 1. Introduction
+
+Most real-world systems are not static — they are **dynamical, nonlinear, and unstable**.
+
+Healthcare systems, in particular, exhibit:
+
+- regime shifts  
+- overload cascades  
+- systemic collapse under stress (e.g., COVID-19)
+
+MetastableX treats epidemiology not as dashboards, but as:
+
+> **a dynamical system evolving through regimes**
+
+---
+
+# ⚙️ 2. Theoretical Framework
+
+## 2.1 Stochastic Dynamics
+
+$$
+\frac{dx}{dt} = f(x) + \sigma \eta(t)
+$$
+
+---
+
+## 2.2 Energy Landscape
+
+$$
+U(x) = -\frac{\sigma^2}{2}\log P(x)
+$$
+
+---
+
+## 2.3 Criticality
+
+$$
+\lambda \approx 0
+$$
+
+---
+
+## 2.4 Information Principle
+
+$$
+\max (H + F)
+$$
+
+---
+
+# ⚠️ 3. Early Warning Signals
+
+- Variance ↑ → instability  
+- Autocorrelation ↑ → critical slowing down  
+- Entropy ↑ → disorder  
+
+---
+
+# 🧬 4. Core Implementations
+
+## 🧠 Hidden Markov Models (HMM)
+
+- Detect **latent epidemiological regimes**
+- Identify transitions (pre-critical → critical → collapse)
+- Works at municipality level
+
+---
+
+## ⚡ Phase Transition Detection
+
+- Automatic rupture detection using `ruptures`
+- Detects:
+
+  - outbreaks  
+  - structural breaks  
+  - COVID onset  
+
+---
+
+## 🌪 Entropy Analysis
+
+- Rolling entropy over time
+- Measures system disorder
+- Peaks indicate instability
+
+---
+
+## 📉 Critical Slowing Down
+
+- Variance + autocorrelation increase
+- Early warning of collapse before events
+
+---
+
+## 🔗 Temporal Clustering (MetastableX core)
+
+- Groups time-series into regimes
+- Identifies recurring epidemiological patterns
+
+---
+
+# 🏥 5. Epidemiological Layer
+
+## 📊 DATASUS Integration
+
+- SIH/SUS real data ingestion
+- Multi-state and multi-year analysis
+- Municipality-level resolution
+
+---
+
+## 🦠 COVID Detection
+
+- CID-based filtering (U07, B34)
+- Detects pandemic as:
+
+  - phase transition  
+  - entropy spike  
+  - regime shift  
+
+---
+
+## 📍 CID Filtering
+
+- Filter dashboard by disease
+- Enables:
+
+  - disease-specific analysis  
+  - risk stratification  
+
+---
+
+## 🏆 National Ranking
+
+- Ranking by:
+
+  - municipality  
+  - CID  
+  - normalized rates  
+
+---
+
+## ⚙️ SIR + ML Modeling
+
+- Classical epidemiological modeling:
+
+$$
+S \rightarrow I \rightarrow R
+$$
+
+- Combined with machine learning for:
+
+  - prediction  
+  - anomaly detection  
+
+---
+
+# 🤖 6. LLM Interpretation Layer
+
+## Local AI (Llama3 via Ollama)
+
+- Fully offline  
+- No API required  
+
+---
+
+## Capabilities
+
+- 🧠 Explain epidemiological dynamics  
+- 📊 Translate metrics into natural language  
+- 📋 Generate scientific reports  
+- 🔍 Interpret:
+
+  - entropy  
+  - HMM states  
+  - outbreaks  
+  - transitions  
+
+---
+
+## Pipeline
+
+```text
+data → physics → ML → regimes → metrics → LLM → explanation

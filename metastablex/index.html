@@ -1,0 +1,2747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>MetastableX — An operational framework for detecting criticality in real-world systems</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+
+<script id="MathJax-script" async
+src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Lora:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+
+body{font-family:Inter;background:#fafafa}
+
+.serif{font-family:Lora}
+
+.mono{font-family:JetBrains Mono}
+
+.math{
+background:#f1f5f9;
+padding:1.5rem;
+border-radius:10px;
+margin:1rem 0;
+border:1px solid #e2e8f0;
+text-align:center;
+}
+
+section{scroll-margin-top:80px}
+
+.diagram{
+background:white;
+border:1px solid #e5e7eb;
+border-radius:12px;
+padding:40px;
+margin-top:30px;
+}
+
+.architecture-diagram{
+display:flex;
+flex-direction:column;
+align-items:center;
+gap:14px;
+margin-top:30px;
+}
+
+.arch-box{
+background:#fdfdfd;
+border:1px solid #e0e0e0;
+padding:18px 30px;
+border-radius:8px;
+text-align:center;
+font-family:'Crimson Pro', serif;
+max-width:420px;
+font-size:1rem;
+}
+
+.arch-arrow{
+font-size:22px;
+color:#9e9e9e;
+}
+
+.highlight{
+border-left:5px solid #3f51b5;
+background:#eef1ff;
+}
+
+</style>
+</head>
+
+<body class="text-slate-800 leading-relaxed">
+
+<nav class="sticky top-0 bg-white border-b border-slate-200 z-50">
+
+<div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
+
+<span class="font-bold text-lg italic">
+Metastable<span class="text-indigo-600">X</span>
+</span>
+
+<div class="space-x-6 text-sm font-semibold text-slate-700">
+
+<a href="#abstract" class="hover:text-indigo-600">Abstract</a>
+
+<a href="#gl" class="hover:text-indigo-600">Theory</a>
+
+<a href="#Principle" class="hover:text-indigo-600">QWAN</a>
+
+<a href="#info-geometry" class="hover:text-indigo-600">Geometry</a>
+
+<a href="#simulation" class="hover:text-indigo-600">Simulation</a>
+
+<a href="#graphs" class="hover:text-indigo-600">Experiments</a>
+
+<a href="#applications" class="hover:text-indigo-600">Applications</a>
+
+<a href="#architecture" class="hover:text-indigo-600">Architecture</a>
+
+<a href="#pseudocode" class="hover:text-indigo-600">Algorithm</a>
+
+<a href="#limitations" class="hover:text-indigo-600">Limits</a>
+
+</div>
+
+</div>
+
+</nav>
+
+<main class="max-w-4xl mx-auto px-6 py-16">
+
+<header class="mb-16">
+
+<h1 class="text-5xl serif font-bold mb-6">
+Computational Metastability and the
+<span class="text-indigo-600">Quality Without A Name</span>
+</h1>
+
+<p class="text-xl italic text-slate-500 serif">
+An operational framework for detecting criticality in real-world systems
+</p>
+
+<div class="mt-6">
+
+<p class="font-bold text-lg">
+Lucas Amaral Dourado
+</p>
+
+<p class="text-slate-600 italic">
+Medical Student — Federal University of Tocantins (UFT)
+</p>
+
+<p class="text-slate-600 italic">
+Software Engineering Student — Centro Universitário Internacional (UNINTER)
+</p>
+
+<p class="text-slate-400 text-sm mt-2 uppercase tracking-widest">
+Independent Research — Brazil — 2026
+</p>
+<br>
+</div>
+
+
+<!-- GINZBURG LANDAU -->
+
+<section id="gl" class="mb-20">
+
+<section id="abstract" class="mb-20">
+
+<div class="bg-indigo-50 border border-indigo-200 p-10 rounded-2xl shadow-sm">
+
+<h3 class="text-xs uppercase tracking-[0.4em] text-indigo-600 font-bold mb-6 text-center">
+
+ABSTRACT
+
+</h3>
+
+<p class="serif text-lg text-slate-700 leading-relaxed text-justify">
+
+This work proposes a unified theoretical framework connecting the concept of 
+<strong>Quality Without A Name (QWAN)</strong>, introduced by Christopher Alexander, 
+with the physics of <strong>metastability and marginal criticality</strong> in complex dynamical systems.
+
+We demonstrate that QWAN can be formally interpreted as the macroscopic signature 
+of systems operating near the <strong>edge of stability</strong>, where structural coherence and 
+configurational freedom coexist in dynamic equilibrium.
+
+The theoretical framework is derived using a variational formalism inspired by 
+<strong>Ginzburg–Landau field theory</strong>, combined with stochastic dynamics and 
+information-theoretic principles.
+
+In this formulation, system organization emerges from the minimization of a structural functional:
+
+</p>
+
+<div class="math">
+
+$$
+\Phi =
+\int
+\left[
+\gamma (x-x_0)^2
+-
+\alpha (x-\bar{x})^2
++
+\beta |\nabla x|^2
+\right]
+dr
+$$
+
+</div>
+
+<p class="serif text-lg text-justify">
+
+We show that adaptive complex systems operate near a regime of 
+<strong>marginal criticality</strong>, characterized by a Lyapunov exponent approaching zero.
+
+In this regime the system simultaneously maximizes informational entropy 
+and structural information, leading to the informational optimality condition:
+
+</p>
+
+<div class="math">
+
+$$
+\max(H + F)
+\Rightarrow
+\lambda \approx 0
+$$
+
+</div>
+
+<p class="serif text-lg text-justify">
+
+where \(H\) is Shannon entropy and \(F\) is Fisher information.
+
+To empirically investigate this theoretical regime we introduce the open scientific framework 
+<strong>MetastableX</strong>, a computational platform designed to detect structural transitions 
+and early-warning signals in complex systems.
+
+Applications explored include physiological regulation (heart rate variability), 
+epidemiological monitoring of hospitalization systems, and general dynamical systems analysis.
+
+</p>
+
+</div>
+<div class="mt-10 text-center">
+
+<a href="https://github.com/goldenluke/metastablex"
+target="_blank"
+class="inline-flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:bg-slate-800 transition">
+
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16">
+<path d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 005.47 7.59c.4.07.55-.17.55-.38 
+0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 
+1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 
+0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 
+.67-.21 2.2.82a7.59 7.59 0 012-.27c.68 0 
+1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 
+1.1.16 1.92.08 2.12.51.56.82 
+1.27.82 2.15 0 3.07-1.87 
+3.75-3.65 3.95.29.25.54.73.54 
+1.48 0 1.07-.01 1.93-.01 
+2.2 0 .21.15.46.55.38A8.013 8.013 
+0 0016 8c0-4.42-3.58-8-8-8z"/>
+</svg>
+
+View MetastableX on GitHub
+
+</a>
+
+<p class="text-sm text-slate-500 mt-4">
+
+Open scientific repository:  
+<strong>github.com/goldenluke/metastablex</strong>
+
+</p>
+
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-10 mt-10">
+
+<div>
+
+<h4 class="text-xs uppercase tracking-[0.3em] font-bold text-slate-500 mb-4">
+
+KEYWORDS
+
+</h4>
+
+<p class="text-sm text-slate-600 leading-relaxed">
+
+Complex Systems;  
+Metastability;  
+Critical Phenomena;  
+Statistical Physics;  
+Nonlinear Dynamics;  
+Information Theory;  
+Structural Functional;  
+Early Warning Signals;  
+Complexity Science;  
+Adaptive Systems.
+
+</p>
+
+</div>
+
+
+<div>
+
+<h4 class="text-xs uppercase tracking-[0.3em] font-bold text-slate-500 mb-4">
+
+SCIENTIFIC CLASSIFICATION
+
+</h4>
+
+<p class="text-sm text-slate-600 leading-relaxed">
+
+PACS 05.45.-a — Nonlinear dynamics and chaos  
+PACS 64.60.-i — General studies of phase transitions  
+PACS 87.10.Mn — Stochastic modeling  
+PACS 89.75.-k — Complex systems  
+PACS 87.19.Hh — Heart rate dynamics
+
+</p>
+
+</div>
+
+</div>
+
+</section>
+  
+<h2 class="text-3xl font-bold mb-6 serif">
+1. Ginzburg–Landau Structural Field Theory
+</h2>
+
+<p class="text-lg serif">
+
+We model complex systems using an order parameter field
+
+\(x(r,t)\)
+
+representing structural organization across space and time.
+
+The dynamics emerges from a variational principle minimizing a structural free energy functional.
+
+</p>
+
+<div class="math">
+
+$$
+\Phi[x] =
+\int
+\left[
+\gamma(x-x_0)^2
+-
+\alpha(x-\bar{x})^2
++
+\beta|\nabla x|^2
+\right]
+dr
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Each term corresponds to a structural mechanism:
+
+</p>
+
+<ul class="list-disc ml-8 mt-4 text-lg serif">
+
+<li><b>Energy anchoring</b> \(G(x)\)</li>
+
+<li><b>Configurational freedom</b> \(H_s(x)\)</li>
+
+<li><b>Spatial coherence</b> \(I_s(x)\)</li>
+
+</ul>
+
+<p class="mt-6 text-lg serif">
+
+The system evolves through Onsager dissipative dynamics:
+
+</p>
+
+<div class="math">
+
+$$
+\frac{\partial x}{\partial t}
+=
+-
+L
+\frac{\delta \Phi}{\delta x}
++
+F_{env}
+$$
+
+</div>
+
+<p class="text-lg serif">
+
+Expanding the functional derivative yields the stochastic Ginzburg–Landau equation:
+
+</p>
+
+<div class="math">
+
+$$
+\partial_t x =
+-L[
+\gamma(x-x_0)
+-
+\alpha(x-\bar{x})
++
+\beta\nabla^2 x
+]
++
+F_{env}
+$$
+
+</div>
+
+</section>
+
+
+<!-- RENORMALIZATION -->
+
+<section id="rg" class="mb-20">
+
+<h2 class="text-3xl font-bold mb-6 serif">
+
+2. Renormalization Group Physics
+
+</h2>
+
+<p class="text-lg serif">
+
+At large spatial scales, the structural dynamics of complex systems becomes scale invariant.
+
+Renormalization group theory describes how system parameters transform under coarse-graining.
+
+</p>
+
+<p class="text-lg serif">
+
+Consider a spatial rescaling:
+
+</p>
+
+<div class="math">
+
+$$
+r' = b r
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The order parameter transforms as:
+
+</p>
+
+<div class="math">
+
+$$
+x'(r') = b^{-\Delta} x(r)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The coupling constants evolve according to RG flow equations:
+
+</p>
+
+<div class="math">
+
+$$
+\frac{d\alpha}{dl} = \beta_\alpha(\alpha,\beta,\gamma)
+$$
+
+</div>
+
+<div class="math">
+
+$$
+\frac{d\beta}{dl} = \beta_\beta(\alpha,\beta,\gamma)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Critical points correspond to fixed points of the RG flow:
+
+</p>
+
+<div class="math">
+
+$$
+\beta_\alpha = 0
+$$
+
+$$
+\beta_\beta = 0
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Near these fixed points, the system exhibits power-law correlations:
+
+</p>
+
+<div class="math">
+
+$$
+C(r) \sim r^{-\eta}
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+This scale invariance explains the fractal patterns observed in QWAN systems.
+
+</p>
+
+</section>
+
+
+<!-- QWAN Principle -->
+
+<section id="Principle" class="mb-20">
+
+<h2 class="text-3xl font-bold mb-6 serif">
+
+3. Formal QWAN Principle
+
+</h2>
+
+<div class="bg-indigo-50 border border-indigo-200 p-8 rounded-xl">
+
+<p class="text-xl serif font-bold mb-6">
+
+Principle (QWAN Criticality Principle)
+
+</p>
+
+<p class="serif text-lg">
+
+For a stochastic dynamical system
+
+</p>
+
+<div class="math">
+
+$$
+x_{t+1} = F(x_t) + \eta_t
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+the emergence of QWAN occurs if and only if the system satisfies the following conditions:
+
+</p>
+
+<ul class="list-disc ml-8 text-lg serif">
+
+<li>The largest Lyapunov exponent satisfies \( \lambda \approx 0 \)</li>
+
+<li>Shannon entropy is locally maximized</li>
+
+<li>Fisher information is locally maximized</li>
+
+</ul>
+
+<p class="mt-6 text-lg serif">
+
+Formally,
+
+</p>
+
+<div class="math">
+
+$$
+\max (H + F)
+\Rightarrow
+\lambda \approx 0
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+where
+
+</p>
+
+<div class="math">
+
+$$
+H = -\sum p_i \log p_i
+$$
+
+</div>
+
+<div class="math">
+
+$$
+F = \int \frac{(\nabla p)^2}{p} dx
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Thus QWAN corresponds to the marginal critical regime of dynamical systems.
+
+</p>
+
+</div>
+
+</section>
+
+<section id="simulation" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-8">
+Biophysical Simulation of the QWAN Field
+</h2>
+
+<div class="mt-10 text-center">
+
+<p class="text-sm uppercase tracking-widest text-slate-500 font-bold mb-4">
+Biophysical Experiment Repository
+</p>
+
+<a href="https://github.com/goldenluke/qwan_zero_pipeline"
+target="_blank"
+class="inline-flex items-center gap-3 bg-indigo-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">
+
+<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16">
+<path d="M8 0C3.58 0 0 3.58 0 8a8.013 8.013 0 005.47 7.59c.4.07.55-.17.55-.38
+0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13
+-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21
+1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
+0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0
+.67-.21 2.2.82a7.59 7.59 0 012-.27c.68 0
+1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44
+1.1.16 1.92.08 2.12.51.56.82
+1.27.82 2.15 0 3.07-1.87
+3.75-3.65 3.95.29.25.54.73.54
+1.48 0 1.07-.01 1.93-.01
+2.2 0 .21.15.46.55.38A8.013 8.013
+0 0016 8c0-4.42-3.58-8-8-8z"/>
+</svg>
+
+Open Biophysical Experiment
+
+</a>
+<br>
+<p class="text-sm text-slate-500 mt-4 max-w-xl mx-auto">
+
+This repository contains the computational pipeline used to simulate the
+<strong>QWAN structural field dynamics</strong>, including the variational model,
+Onsager relaxation simulation, and the generation of the structural maps
+presented in this work.
+
+</p>
+
+</div>
+  
+<p class="serif text-lg mb-6">
+
+The following simulation illustrates the temporal evolution of the structural order parameter
+
+\(x(r,t)\)
+
+under the stochastic Ginzburg–Landau dynamics.
+
+</p>
+
+<div class="bg-black rounded-xl overflow-hidden shadow-xl mb-8">
+
+<video controls autoplay muted loop playsinline style="width:100%">
+<source src="ezgif-7829ea07d0adc8c5.mp4" type="video/mp4">
+</video>
+
+</div>
+
+<p class="serif text-lg">
+
+The color field represents the structural order parameter. Regions of coherent color correspond to metastable domains.
+
+The system evolves through Onsager relaxation:
+
+</p>
+
+<div class="math">
+
+$$
+\partial_t x = -L \frac{\delta \Phi}{\delta x} + F_{env}
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+As the simulation progresses the field self-organizes into coherent clusters that represent local attractor basins.
+
+</p>
+
+</section>
+
+
+
+<!-- GRAPHS -->
+
+<section id="graphs" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-10">
+
+Experimental Graph Analysis
+
+</h2>
+
+
+
+<!-- PHI MAP -->
+
+<div class="mb-16">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/phi_map.png?raw=true" class="rounded-xl shadow-lg mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+Structural Functional Map \( \Phi(x) \)
+</h3>
+
+<p class="serif text-lg">
+
+This visualization represents the spatial density of the structural functional
+
+</p>
+
+<div class="math">
+
+$$
+\Phi =
+\int
+[
+\gamma(x-x_0)^2
+-
+\alpha(x-\bar{x})^2
++
+\beta|\nabla x|^2
+]
+dr
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Dark regions correspond to low-energy attractor basins where the functional gradient vanishes:
+
+</p>
+
+<div class="math">
+
+$$
+\frac{\delta \Phi}{\delta x} \approx 0
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+These basins correspond to stable structural configurations where the system maintains coherence despite environmental noise.
+
+</p>
+
+</div>
+
+
+
+<!-- CRITICAL FIELD -->
+
+<div class="mb-16">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/field_at_Tc.png?raw=true" class="rounded-xl shadow-lg mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+Critical Field Configuration \(T_c\)
+</h3>
+
+<p class="serif text-lg">
+
+This field configuration is captured exactly at the phase transition temperature \(T_c\).
+
+At this point spatial correlations diverge:
+
+</p>
+
+<div class="math">
+
+$$
+\xi \to \infty
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The system exhibits scale-free clusters characteristic of critical phenomena.
+
+The correlation function follows a power law:
+
+</p>
+
+<div class="math">
+
+$$
+C(r) \sim r^{-\eta}
+$$
+
+</div>
+
+</div>
+
+
+
+<!-- GRADIENT -->
+
+<div class="mb-16">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/gradient_map.png?raw=true" class="rounded-xl shadow-lg mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Gradient Energy Map \( |\nabla x|^2 \)
+
+</h3>
+
+<p class="serif text-lg">
+
+This map isolates the structural coherence component of the functional.
+
+</p>
+
+<div class="math">
+
+$$
+I_s(x) = |\nabla x|^2
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+High gradient regions correspond to boundaries between metastable domains.
+
+These boundaries represent structural tension zones where the system negotiates competing attractor states.
+
+</p>
+
+</div>
+
+
+
+<!-- VARIANCE -->
+
+<div class="mb-16">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/variance_map.png?raw=true" class="rounded-xl shadow-lg mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Variance Map — Flickering Detection
+
+</h3>
+
+<p class="serif text-lg">
+
+The variance map reveals the spatial distribution of fluctuations:
+
+</p>
+
+<div class="math">
+
+$$
+Var(x_t) = E[(x_t-\mu)^2]
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+In metastable systems the variance increases prior to structural collapse.
+
+This phenomenon is known as flickering and occurs when the system begins exploring the edges of its potential well.
+
+</p>
+
+</div>
+
+
+
+<!-- CRITICAL TRANSITION -->
+
+<div class="mb-16">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/critical_transition.png?raw=true" class="rounded-xl shadow-lg mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Critical Transition Dynamics
+
+</h3>
+
+<p class="serif text-lg">
+
+The graph illustrates the collapse of a metastable state as a control parameter \( \theta \) approaches a critical threshold.
+
+</p>
+
+<div class="math">
+
+$$
+x_{t+1} = F(x_t,\theta)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+When the bifurcation point is reached the system abruptly jumps to a new attractor basin.
+
+This transition corresponds to a catastrophic loss of structural coherence.
+
+</p>
+
+</div>
+
+
+
+<!-- POTENTIAL -->
+
+<div class="mb-16">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Effective Potential Landscape
+
+</h3>
+
+<div class="math">
+
+$$
+U(x) = -\frac{\sigma^2}{2}\log P(x)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+This equation reconstructs the effective energy landscape from empirical probability distributions.
+
+Deep potential wells correspond to stable attractors while shallow wells indicate fragile metastable states.
+
+</p>
+
+</div>
+
+
+
+<!-- POWER SPECTRUM -->
+
+<div class="mb-16">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Power Spectrum Analysis
+
+</h3>
+
+<p class="serif text-lg">
+
+Temporal correlations are analyzed through the power spectrum:
+
+</p>
+
+<div class="math">
+
+$$
+S(f) \sim f^{-\beta}
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Healthy complex systems typically exhibit \(1/f\) noise.
+
+</p>
+
+</div>
+
+
+
+<!-- MULTISCALE ENTROPY -->
+
+<div class="mb-16">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Multiscale Entropy
+
+</h3>
+
+<div class="math">
+
+$$
+MSE(\tau) = H(x_\tau)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Entropy is computed across multiple temporal scales to quantify structural complexity.
+
+Healthy systems exhibit entropy across multiple scales while pathological systems collapse to single-scale dynamics.
+
+</p>
+
+</div>
+
+</section>
+
+  <section id="applications" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-10">
+
+Applications in Physiological and Epidemiological Systems
+
+</h2>
+
+<p class="serif text-lg mb-10">
+
+The MetastableX framework was applied to two real-world systems: 
+physiological regulation (heart rate variability) and hospital system dynamics 
+derived from Brazilian SIH/SUS hospitalization data.
+
+</p>
+
+
+
+<!-- CARDIOLOGY -->
+
+<div class="mb-20">
+
+<img src="https://github.com/goldenluke/qwan/blob/main/qwan2.jpeg?raw=true"
+class="rounded-xl shadow-xl mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Cardiology — Heart Rate Variability Complexity Analysis
+
+</h3>
+
+<p class="serif text-lg mb-6">
+
+The cardiology dashboard visualizes the nonlinear dynamics of heart rate variability (HRV). 
+Physiological regulation of the cardiovascular system is known to operate near the edge of chaos.
+
+A healthy heart does not behave as a periodic oscillator nor as random noise. 
+Instead, it exhibits structured fluctuations characteristic of adaptive complex systems.
+
+</p>
+
+<h4 class="font-bold mt-6 mb-4">Key Physiological Indicators</h4>
+
+<ul class="list-disc ml-8 text-lg serif">
+
+<li><b>Mean Heart Rate</b> — average cardiac rhythm</li>
+
+<li><b>SDNN</b> — standard deviation of RR intervals</li>
+
+<li><b>RMSSD</b> — parasympathetic activity indicator</li>
+
+<li><b>DFA Alpha</b> — fractal scaling exponent</li>
+
+</ul>
+
+<div class="math">
+
+$$
+F(n) \sim n^\alpha
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The DFA exponent characterizes long-range correlations in heart rate dynamics.
+
+Typical interpretation:
+
+</p>
+
+<ul class="list-disc ml-8 text-lg serif">
+
+<li>\(\alpha \approx 0.5\) — random noise</li>
+
+<li>\(0.6 < \alpha < 0.9\) — healthy physiological complexity</li>
+
+<li>\(\alpha > 1\) — rigid pathological dynamics</li>
+
+</ul>
+
+<p class="serif text-lg">
+
+The potential landscape plot in the dashboard reconstructs the cardiac stability basin using:
+
+</p>
+
+<div class="math">
+
+$$
+U(x) = -\frac{\sigma^2}{2}\ln P(x)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The central potential well represents the stable homeostatic regime of cardiac regulation.
+
+Loss of variability corresponds to a narrowing of this basin and is associated with cardiovascular risk.
+
+</p>
+
+</div>
+
+
+
+<!-- SIH -->
+
+<div class="mb-20">
+
+<img src="https://github.com/goldenluke/qwan_zero_pipeline/blob/main/5b11a452-9113-4243-8944-e13cb9aa2f37.jpeg?raw=true"
+class="rounded-xl shadow-xl mb-6">
+
+<h3 class="text-xl font-bold serif mb-4">
+
+Hospital System Dynamics — SIH/SUS Case Study
+
+</h3>
+
+<p class="serif text-lg mb-6">
+
+The dashboard above represents the structural monitoring of hospitalization dynamics using 
+Brazil's Hospital Information System (SIH/SUS).
+
+Hospitalization counts are treated as a complex dynamical system influenced by epidemiological, 
+environmental, and policy factors.
+
+</p>
+
+<p class="serif text-lg">
+
+The structural resilience index used by MetastableX is defined as:
+
+</p>
+
+<div class="math">
+
+$$
+Resilience = 1 - Risk
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+where the risk score integrates multiple early-warning indicators:
+
+</p>
+
+<div class="math">
+
+$$
+Risk =
+\frac{
+AC_1 +
+\alpha +
+\log(Var)
+}{3}
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Three main signals indicate the approach of a critical transition in hospital systems:
+
+</p>
+
+<ul class="list-disc ml-8 text-lg serif">
+
+<li><b>Critical Slowing Down</b>: autocorrelation approaching unity</li>
+
+<li><b>Variance amplification</b>: increasing volatility in hospitalization counts</li>
+
+<li><b>Structural flickering</b>: rapid transitions between metastable states</li>
+
+</ul>
+
+<div class="math">
+
+$$
+AC_1 \rightarrow 1
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+When these signals appear simultaneously, the hospital system is approaching a tipping point 
+where capacity limits may be exceeded.
+
+The MetastableX monitoring framework enables early detection of these transitions, 
+allowing preventive intervention.
+
+</p>
+
+</div>
+
+<section id="info-geometry" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-6">
+4. Information Geometry Interpretation of the QWAN Principle
+</h2>
+
+<p class="serif text-lg">
+
+The QWAN principle can be interpreted through the framework of
+<strong>information geometry</strong>, developed by Shun-ichi Amari.
+
+In this framework, families of probability distributions form a
+<strong>statistical manifold</strong> — a geometric space where each point
+corresponds to a probability distribution.
+
+</p>
+
+<p class="serif text-lg">
+
+Consider a parametric distribution
+
+</p>
+
+<div class="math">
+
+$$
+p(x|\theta)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+The parameter vector \( \theta \) defines a point in the statistical manifold.
+
+The geometry of this manifold is determined by the
+<strong>Fisher Information Matrix</strong>:
+
+</p>
+
+<div class="math">
+
+$$
+g_{ij}(\theta)
+=
+E
+\left[
+\frac{\partial \log p}{\partial \theta_i}
+\frac{\partial \log p}{\partial \theta_j}
+\right]
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+This metric defines distances, curvature, and geodesics in the space
+of probability distributions.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Fisher Information as Geometric Curvature
+</h3>
+
+<p class="serif text-lg">
+
+The Fisher information appearing in the QWAN principle
+
+</p>
+
+<div class="math">
+
+$$
+F =
+\int
+\frac{(\nabla p)^2}{p}
+dx
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+can be interpreted as the continuous representation of the Fisher metric.
+
+When Fisher information increases, the probability distribution becomes
+more sensitive to structural perturbations.
+
+Geometrically this corresponds to an increase in the
+<strong>curvature of the statistical manifold</strong>.
+
+</p>
+
+<p class="serif text-lg">
+
+Systems approaching regime transitions typically exhibit precisely this
+increase in Fisher curvature.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Entropy as a Geometric Potential
+</h3>
+
+<p class="serif text-lg">
+
+The second component of the QWAN principle is Shannon entropy:
+
+</p>
+
+<div class="math">
+
+$$
+H =
+-\sum p_i \log p_i
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Entropy measures the diversity of accessible states.
+
+In information geometry it can be interpreted as defining a
+<strong>convex potential</strong> over the statistical manifold.
+
+Amari demonstrated that entropy and Fisher information are related through
+a dual geometric structure known as:
+
+</p>
+
+<p class="serif text-lg font-semibold text-center">
+
+Dually Flat Geometry
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Geometric Interpretation of the QWAN Principle
+</h3>
+
+<p class="serif text-lg">
+
+The QWAN principle can therefore be written as
+
+</p>
+
+<div class="math">
+
+$$
+\max(H + F)
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+This expression corresponds to the simultaneous maximization of:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li><strong>Entropy</strong> — exploration of the statistical manifold</li>
+
+<li><strong>Fisher information</strong> — local curvature of the manifold</li>
+
+</ul>
+
+<p class="serif text-lg">
+
+When both quantities are high, the system explores a wide range of states
+while maintaining strong structural distinguishability.
+
+</p>
+
+<p class="serif text-lg">
+
+This regime corresponds to the well-known dynamical state of
+
+</p>
+
+<p class="serif text-xl font-semibold text-center">
+
+criticality — the edge of chaos.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Connection with Lyapunov Dynamics
+</h3>
+
+<p class="serif text-lg">
+
+The Lyapunov exponent measures sensitivity to perturbations:
+
+</p>
+
+<div class="math">
+
+$$
+\lambda =
+\lim_{t\to\infty}
+\frac{1}{t}
+\ln |\delta x(t)|
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Three regimes exist:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>\(\lambda < 0\) — ordered dynamics</li>
+
+<li>\(\lambda > 0\) — chaotic dynamics</li>
+
+<li>\(\lambda \approx 0\) — critical regime</li>
+
+</ul>
+
+<p class="serif text-lg">
+
+At criticality perturbations neither decay nor explode.
+
+This regime naturally maximizes both entropy and Fisher information:
+
+</p>
+
+<div class="math">
+
+$$
+H \uparrow
+$$
+
+</div>
+
+<div class="math">
+
+$$
+F \uparrow
+$$
+
+</div>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Information-Geometric Formulation
+</h3>
+
+<p class="serif text-lg">
+
+A more explicit formulation of the QWAN principle can be written as:
+
+</p>
+
+<div class="math">
+
+$$
+\theta^*
+=
+\arg\max_\theta
+\left[
+H(p_\theta)
++
+\lambda_F
+\operatorname{Tr} G(\theta)
+\right]
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+where \(G(\theta)\) is the Fisher information matrix.
+
+This formulation connects the QWAN framework directly with the
+theory of statistical manifolds.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Interpretation
+</h3>
+
+<p class="serif text-lg">
+
+From this perspective the QWAN state corresponds to:
+
+</p>
+
+<div class="math">
+
+$$
+\text{QWAN state}
+=
+\text{critical point of the information manifold}
+$$
+
+</div>
+
+<p class="serif text-lg">
+
+Adaptive complex systems therefore operate near regions where the statistical
+manifold simultaneously exhibits:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>high entropy</li>
+
+<li>high Fisher curvature</li>
+
+</ul>
+
+<p class="serif text-lg">
+
+These regions naturally correspond to metastable regimes where complex
+adaptive behavior emerges.
+
+</p>
+
+</section>
+
+</section>
+
+  <section id="pseudocode" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-8">
+MetastableX Algorithm — Complete Pseudocode
+</h2>
+
+<p class="serif text-lg mb-8">
+
+The MetastableX framework operates as a structural monitoring pipeline
+designed to detect metastable regimes and early warning signals in complex
+systems.  
+
+The algorithm integrates nonlinear dynamics, statistical physics,
+information theory and probabilistic regime detection.
+
+</p>
+
+
+<div class="bg-slate-900 text-green-300 mono p-8 rounded-xl text-sm shadow-xl leading-relaxed">
+
+METASTABLEX PIPELINE
+
+<br><br>
+
+INPUT
+
+<br>
+&nbsp;&nbsp;Time series \(x_t\)
+
+<br>
+&nbsp;&nbsp;Window size \(w\)
+
+<br>
+&nbsp;&nbsp;Number of regimes \(k\)
+
+<br><br>
+
+STEP 1 — PREPROCESSING
+
+<br>
+&nbsp;&nbsp;Remove missing values
+
+<br>
+&nbsp;&nbsp;Normalize signal
+
+<br>
+&nbsp;&nbsp;Compute returns:
+
+<br>
+&nbsp;&nbsp;\( r_t = \log(x_t) - \log(x_{t-1}) \)
+
+<br><br>
+
+STEP 2 — ROLLING WINDOWS
+
+<br>
+&nbsp;&nbsp;for each window \(W_i = r_{i-w:i}\)
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;compute structural metrics
+
+<br><br>
+
+STEP 3 — STRUCTURAL METRICS
+
+<br>
+
+&nbsp;&nbsp;Variance
+
+<br>
+&nbsp;&nbsp;\( Var = E[(x-\mu)^2] \)
+
+<br>
+
+&nbsp;&nbsp;Autocorrelation
+
+<br>
+&nbsp;&nbsp;\( AC_1 = corr(x_t, x_{t-1}) \)
+
+<br>
+
+&nbsp;&nbsp;DFA exponent
+
+<br>
+&nbsp;&nbsp;\( F(n) \sim n^\alpha \)
+
+<br>
+
+&nbsp;&nbsp;Fisher information
+
+<br>
+&nbsp;&nbsp;\( F = \int \frac{(\nabla p)^2}{p} dx \)
+
+<br>
+
+&nbsp;&nbsp;Lempel-Ziv complexity
+
+<br>
+
+&nbsp;&nbsp;Skewness
+
+<br>
+
+&nbsp;&nbsp;Kurtosis
+
+<br><br>
+
+STEP 4 — ENTROPY ANALYSIS
+
+<br>
+
+&nbsp;&nbsp;Compute permutation entropy
+
+<br>
+
+&nbsp;&nbsp;\( H = -\sum p_i \log p_i \)
+
+<br>
+
+&nbsp;&nbsp;Compute multiscale entropy
+
+<br>
+
+&nbsp;&nbsp;\( MSE(\tau) = H(x_\tau) \)
+
+<br><br>
+
+STEP 5 — POTENTIAL LANDSCAPE
+
+<br>
+
+&nbsp;&nbsp;Estimate density \(P(x)\)
+
+<br>
+
+&nbsp;&nbsp;Compute effective potential
+
+<br>
+
+&nbsp;&nbsp;\( U(x) = -\frac{\sigma^2}{2}\log P(x) \)
+
+<br><br>
+
+STEP 6 — SPECTRAL ANALYSIS
+
+<br>
+
+&nbsp;&nbsp;Compute power spectrum
+
+<br>
+
+&nbsp;&nbsp;\( S(f) \sim f^{-\beta} \)
+
+<br>
+
+&nbsp;&nbsp;Detect \(1/f\) noise patterns
+
+<br><br>
+
+STEP 7 — EARLY WARNING SIGNALS
+
+<br>
+
+&nbsp;&nbsp;if
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;\( AC_1 \uparrow \)
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;\( Var \uparrow \)
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;\( Entropy \uparrow \)
+
+<br>
+
+&nbsp;&nbsp;then
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;flag potential critical transition
+
+<br><br>
+
+STEP 8 — REGIME DETECTION
+
+<br>
+
+&nbsp;&nbsp;Fit Hidden Markov Model
+
+<br>
+
+&nbsp;&nbsp;\( z_t \sim HMM(x_t) \)
+
+<br>
+
+&nbsp;&nbsp;Estimate regime probabilities
+
+<br>
+
+&nbsp;&nbsp;\( P(z_t | x_{1:t}) \)
+
+<br><br>
+
+STEP 9 — BAYESIAN FILTER
+
+<br>
+
+&nbsp;&nbsp;Update belief state
+
+<br>
+
+&nbsp;&nbsp;\( p(z_t) \propto p(x_t | z_t)p(z_{t-1}) \)
+
+<br><br>
+
+STEP 10 — RESILIENCE INDEX
+
+<br>
+
+&nbsp;&nbsp;Compute systemic risk
+
+<br>
+
+&nbsp;&nbsp;\(
+Risk =
+\frac{
+AC_1 +
+\alpha +
+\log(Var)
+}{3}
+\)
+
+<br><br>
+
+&nbsp;&nbsp;Resilience
+
+<br>
+
+&nbsp;&nbsp;\(
+Resilience = 1 - Risk
+\)
+
+<br><br>
+
+STEP 11 — REGIME CLASSIFICATION
+
+<br>
+
+&nbsp;&nbsp;if Resilience > 0.6
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;state = EQUILIBRIUM
+
+<br>
+
+&nbsp;&nbsp;if 0.5 < Resilience ≤ 0.6
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;state = APPROACHING CRITICAL
+
+<br>
+
+&nbsp;&nbsp;if 0.4 < Resilience ≤ 0.5
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;state = METASTABLE
+
+<br>
+
+&nbsp;&nbsp;if Resilience ≤ 0.4
+
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;state = CRITICAL
+
+<br><br>
+
+OUTPUT
+
+<br>
+
+&nbsp;&nbsp;Structural metrics
+
+<br>
+
+&nbsp;&nbsp;Potential landscape
+
+<br>
+
+&nbsp;&nbsp;Regime probabilities
+
+<br>
+
+&nbsp;&nbsp;Systemic resilience score
+
+<br>
+
+&nbsp;&nbsp;Early warning signals
+
+</div>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Algorithmic Interpretation
+</h3>
+
+<p class="serif text-lg">
+
+The MetastableX algorithm integrates multiple theoretical frameworks:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>statistical physics (potential landscapes)</li>
+
+<li>information theory (entropy and Fisher information)</li>
+
+<li>nonlinear dynamics (Lyapunov stability and DFA scaling)</li>
+
+<li>probabilistic inference (HMM and Bayesian filtering)</li>
+
+<li>reinforcement learning for adaptive intervention</li>
+
+</ul>
+
+<p class="serif text-lg mt-6">
+
+Together these components enable the detection of metastable regimes and
+early-warning signals of systemic transitions in complex systems such as
+physiological regulation and healthcare infrastructure.
+
+</p>
+
+</section>
+<section id="architecture" class="section-anchor">
+
+<h2 class="text-3xl font-bold serif mb-8">
+MetastableX Computational Architecture
+</h2>
+
+<div class="card z-depth-1 p-10">
+
+<p class="academic-text mb-10">
+MetastableX operates as a multi-layer scientific pipeline designed to monitor
+metastable regimes in complex systems. The framework integrates statistical
+physics, nonlinear dynamics, and information theory to detect structural
+transitions in real-world time series.
+</p>
+
+<div class="architecture-diagram">
+
+<div class="arch-box">
+<strong>Real-World Systems</strong><br>
+Physiology • Hospitals • Markets
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box">
+<strong>Data Acquisition</strong><br>
+Time Series / SIH-SUS / HRV
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box">
+<strong>Complexity Sensors</strong><br>
+DFA • Lempel-Ziv • Fisher • Entropy
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box">
+<strong>Physics Layer</strong><br>
+Potential Landscape<br>
+Power Spectrum<br>
+Phase Space
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box">
+<strong>Regime Detection</strong><br>
+Hidden Markov Models<br>
+Bayesian Filtering
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box">
+<strong>Adaptive Control</strong><br>
+Reinforcement Learning<br>
+Policy Optimization
+</div>
+
+<div class="arch-arrow">↓</div>
+
+<div class="arch-box highlight">
+<strong>Structural Diagnosis</strong><br>
+Equilibrium • Metastable • Critical
+</div>
+
+</div>
+
+</div>
+
+</section>
+<section id="architecture" class="mb-20">
+
+<h3 class="text-xl font-bold serif mt-10 mb-6">
+Full Repository Structure
+</h3>
+
+<div class="bg-slate-900 text-green-300 mono p-8 rounded-xl text-sm shadow-xl leading-relaxed">
+
+metastablex/
+
+<br><br>
+
+├── app.py
+<br>
+├── app_pt.py
+<br>
+├── app_cardiologia.py
+<br>
+├── app_simulator.py
+<br>
+├── app_sus_metastablex.py
+<br>
+├── cardiologia.py
+<br>
+├── mapa_regimes_sus.py
+<br>
+├── test_metastablex.py
+<br>
+
+├── index.html
+<br>
+├── README.md
+<br>
+├── pyproject.toml
+<br>
+├── report.pdf
+<br><br>
+
+├── chess/
+<br>
+│   └── engine.py
+<br><br>
+
+├── plots/
+<br>
+│   ├── metastablex_mosaic.png
+<br>
+│   └── metastablex_mosaic.pdf
+<br><br>
+
+├── data/
+<br>
+│   └── populacao_estimada_completa_spline.csv
+<br><br>
+
+├── media/
+<br>
+│   ├── ezgif-7829ea07d0adc8c5.mp4
+<br>
+│   └── Untitled2.jpeg
+<br><br>
+
+├── metastablex/
+<br>
+│
+<br>
+│   ├── core/
+<br>
+│   │   ├── signals.py
+<br>
+│   │   ├── analyze.py
+<br>
+│   │   ├── instability.py
+<br>
+│   │   └── potential.py
+<br><br>
+
+│   ├── dynamics/
+<br>
+│   │   ├── cardiology.py
+<br>
+│   │   ├── neural_ode.py
+<br>
+│   │   └── critical_system.py
+<br><br>
+
+│   ├── physics/
+<br>
+│   │   ├── engine.py
+<br>
+│   │   ├── lyapunov.py
+<br>
+│   │   ├── phase_space.py
+<br>
+│   │   ├── potentials.py
+<br>
+│   │   └── renormalization.py
+<br><br>
+
+│   ├── regimes/
+<br>
+│   │   ├── hmm.py
+<br>
+│   │   ├── bayesian.py
+<br>
+│   │   ├── early_warning.py
+<br>
+│   │   └── tipping.py
+<br><br>
+
+│   ├── control/
+<br>
+│   │   └── rl.py
+<br><br>
+
+│   ├── ml/
+<br>
+│   │   └── regime_field.py
+<br><br>
+
+│   ├── tensor/
+<br>
+│   │   ├── regime_tensor.py
+<br>
+│   │   ├── multiscale.py
+<br>
+│   │   └── metrics.py
+<br><br>
+
+│   ├── systems/
+<br>
+│   │   ├── base.py
+<br>
+│   │   ├── epidemiology.py
+<br>
+│   │   ├── finance.py
+<br>
+│   │   └── ising.py
+<br><br>
+
+│   ├── scanner/
+<br>
+│   │   ├── scanner.py
+<br>
+│   │   ├── embedding.py
+<br>
+│   │   ├── datasets.py
+<br>
+│   │   └── visualization.py
+<br><br>
+
+│   ├── atlas/
+<br>
+│   │   ├── generator.py
+<br>
+│   │   ├── metrics.py
+<br>
+│   │   └── visualization.py
+<br><br>
+
+│   ├── atlas3d/
+<br>
+│   │   ├── generator.py
+<br>
+│   │   ├── metrics.py
+<br>
+│   │   └── visualization.py
+<br><br>
+
+│   ├── analysis/
+<br>
+│   │   └── regime_map.py
+<br><br>
+
+│   ├── phase/
+<br>
+│   │   └── universal_phase.py
+<br><br>
+
+│   ├── rg/
+<br>
+│   │   ├── operator.py
+<br>
+│   │   └── visualization.py
+<br><br>
+
+│   ├── universality/
+<br>
+│   │   ├── library.py
+<br>
+│   │   └── signature.py
+<br><br>
+
+│   ├── detectors/
+<br>
+│   │   └── universal_detector.py
+<br><br>
+
+│   ├── reporting/
+<br>
+│   │   └── report.py
+<br><br>
+
+│   └── utils/
+<br>
+│       └── preprocessing.py
+<br><br>
+
+└── __init__.py
+
+</div>
+
+  
+<p class="serif text-lg mt-8">
+
+The MetastableX repository is structured as a scientific computational framework
+organized into conceptual layers:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li><b>core/</b> — structural metrics and signal analysis</li>
+
+<li><b>dynamics/</b> — stochastic and nonlinear system evolution</li>
+
+<li><b>physics/</b> — Lyapunov analysis, phase space, renormalization</li>
+
+<li><b>regimes/</b> — HMM and early warning signal detection</li>
+
+<li><b>tensor/</b> — multiscale and high-dimensional representations</li>
+
+<li><b>systems/</b> — domain-specific models (epidemiology, finance, ising)</li>
+
+<li><b>atlas / atlas3d</b> — structural mapping and visualization</li>
+
+<li><b>scanner/</b> — embedding and data exploration</li>
+
+<li><b>control/</b> — reinforcement learning for adaptive intervention</li>
+
+<li><b>universality/</b> — cross-system pattern detection</li>
+
+</ul>
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Core Layer — Structural Sensors
+</h3>
+
+<p class="serif text-lg">
+
+The <strong>core</strong> module implements the structural sensors used to quantify
+complexity and metastability in time series.
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>rolling volatility</li>
+
+<li>autocorrelation (AC1)</li>
+
+<li>skewness and kurtosis</li>
+
+<li>synthetic signal generators</li>
+
+<li>potential landscape reconstruction</li>
+
+</ul>
+
+<div class="math">
+
+$$
+U(x) =
+-\frac{\sigma^2}{2}
+\log P(x)
+$$
+
+</div>
+
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Dynamics Layer — Physical Models
+</h3>
+
+<p class="serif text-lg">
+
+The <strong>dynamics</strong> module contains the generative models that simulate
+metastable systems.
+
+These models implement stochastic nonlinear dynamics derived from the
+Ginzburg–Landau formalism.
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>cardiac autonomic balance models</li>
+
+<li>synthetic dynamical systems</li>
+
+<li>future neural ODE implementations</li>
+
+</ul>
+
+<div class="math">
+
+$$
+dx =
+-\nabla U(x)dt +
+\sqrt{2D}dW_t
+$$
+
+</div>
+
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Regime Detection Layer
+</h3>
+
+<p class="serif text-lg">
+
+The <strong>regimes</strong> module implements probabilistic models that detect
+structural transitions between dynamical regimes.
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>Hidden Markov Models</li>
+
+<li>Bayesian regime filters</li>
+
+</ul>
+
+<div class="math">
+
+$$
+P(z_t | x_{1:t})
+$$
+
+</div>
+
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Adaptive Control Layer
+</h3>
+
+<p class="serif text-lg">
+
+The <strong>control</strong> module implements reinforcement learning strategies
+for adaptive intervention in metastable systems.
+
+</p>
+
+<div class="math">
+
+$$
+Q(s,a)
+\leftarrow
+Q(s,a)
++
+\alpha
+(r +
+\gamma
+\max Q(s',a')
+-
+Q(s,a))
+$$
+
+</div>
+
+
+
+<h3 class="text-xl font-bold serif mt-10 mb-4">
+Applications Layer
+</h3>
+
+<p class="serif text-lg">
+
+The application layer provides user interfaces for real-world monitoring.
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+
+<li>hospital system monitoring (SIH/SUS)</li>
+
+<li>cardiac complexity analysis</li>
+
+<li>structural resilience dashboards</li>
+
+</ul>
+
+
+<p class="serif text-lg mt-8">
+
+Together these layers form a complete pipeline for detecting metastable regimes,
+monitoring structural resilience, and identifying early warning signals of
+systemic collapse.
+
+</p>
+
+</section>
+
+  <section id="limitations" class="mb-20">
+
+<h2 class="text-3xl font-bold serif mb-10">
+Limitations and Open Theoretical Problems
+</h2>
+
+<p class="serif text-lg mb-8">
+
+The theoretical framework presented in this work represents an initial step toward a
+formal physics of structural organization in complex systems.  
+Several aspects of the theory remain under development and require further mathematical
+formalization and empirical validation.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+1. Lack of Full Variational Derivations
+</h3>
+
+<p class="serif text-lg">
+
+The structural functional
+
+</p>
+
+<div class="math">
+$$
+\Phi =
+\int
+[
+\gamma(x-x_0)^2
+-
+\alpha(x-\bar{x})^2
++
+\beta |\nabla x|^2
+]dr
+$$
+</div>
+
+<p class="serif text-lg">
+
+is introduced as an effective phenomenological functional inspired by
+Ginzburg–Landau field theory.  
+However, a full derivation from microscopic dynamics has not yet been established.
+
+Future work should attempt to derive this functional from:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>agent-based microscopic dynamics</li>
+<li>maximum entropy principles</li>
+<li>statistical field theory formulations</li>
+</ul>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+2. Interpretation of the Order Parameter
+</h3>
+
+<p class="serif text-lg">
+
+The scalar field \( \phi(x,t) \) introduced in the theory represents a structural
+order parameter describing system organization.
+
+In practice, the specific interpretation of \( \phi \) depends on the domain:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>Cardiology: normalized RR interval fluctuations</li>
+<li>Epidemiology: hospitalization rate fluctuations</li>
+<li>Economic systems: volatility or systemic stress indicators</li>
+</ul>
+
+<p class="serif text-lg">
+
+Future theoretical work should formalize the mapping between the abstract field
+\( \phi \) and measurable observables.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+3. Renormalization Group Formalism
+</h3>
+
+<p class="serif text-lg">
+
+The Renormalization Group discussion presented in this work is currently heuristic.
+
+A rigorous treatment requires the definition of an explicit coarse-graining operator:
+
+</p>
+
+<div class="math">
+$$
+\phi'(x) =
+\int K_\Lambda(x-y)\phi(y)dy
+$$
+</div>
+
+<p class="serif text-lg">
+
+followed by the derivation of flow equations for the coupling constants:
+
+</p>
+
+<div class="math">
+$$
+\frac{d\alpha}{dl} = \beta_\alpha(\alpha,\beta,\gamma)
+$$
+</div>
+
+<div class="math">
+$$
+\frac{d\beta}{dl} = \beta_\beta(\alpha,\beta,\gamma)
+$$
+</div>
+
+<p class="serif text-lg">
+
+The identification of RG fixed points corresponding to QWAN regimes remains
+an open research problem.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+4. Status of the QWAN Principle
+</h3>
+
+<p class="serif text-lg">
+
+The proposed QWAN Principle
+
+</p>
+
+<div class="math">
+$$
+\max(H + F) \Rightarrow \lambda \approx 0
+$$
+</div>
+
+<p class="serif text-lg">
+
+should currently be interpreted as a strong conjecture rather than a proven law.
+
+While empirical observations suggest that systems near criticality tend to simultaneously
+maximize entropy and Fisher information, a formal derivation remains absent.
+
+Key missing elements include:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>analytical or partial mathematical proof</li>
+<li>controlled simulations demonstrating causal mechanisms</li>
+<li>systematic comparison with canonical models (e.g., Ising model, logistic map)</li>
+</ul>
+
+<p class="serif text-lg">
+
+At present, the QWAN principle should be interpreted as a unifying hypothesis
+guiding empirical investigation rather than a finalized theoretical result.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+5. Lack of Strong Quantitative Validation
+</h3>
+
+<p class="serif text-lg">
+
+Although the framework provides rich visual and qualitative evidence of metastable behavior,
+robust quantitative validation remains limited.
+
+For broader scientific acceptance, the framework must incorporate:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>statistical hypothesis testing</li>
+<li>comparison against baseline models</li>
+<li>performance metrics for transition detection</li>
+</ul>
+
+<p class="serif text-lg">
+
+Critical evaluation metrics should include:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>precision and recall in detecting regime transitions</li>
+<li>ROC curves and AUC analysis</li>
+<li>false positive and false negative rates</li>
+</ul>
+
+<p class="serif text-lg">
+
+Such validation is essential for translating the framework into operational
+use in real-world systems and for publication in peer-reviewed venues.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+6. Phenomenological Nature of the Functional
+</h3>
+
+<p class="serif text-lg">
+
+The structural functional \( \Phi \) is currently introduced at a phenomenological level.
+
+While inspired by Ginzburg–Landau theory, its direct derivation from first principles
+remains unresolved.
+
+Reviewers may question the origin of this formulation.
+
+Potential paths toward theoretical grounding include:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>maximum entropy arguments</li>
+<li>simplified variational derivations</li>
+<li>formal analogies with classical Landau free energy</li>
+</ul>
+
+<p class="serif text-lg">
+
+Clarifying this point is crucial for elevating the framework from heuristic modeling
+to formal theory.
+
+</p>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+7. Scope and Conceptual Breadth
+</h3>
+
+<p class="serif text-lg">
+
+The framework spans multiple domains, including:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>statistical physics</li>
+<li>biology and physiology</li>
+<li>epidemiology</li>
+<li>reinforcement learning</li>
+<li>information geometry</li>
+</ul>
+
+<p class="serif text-lg">
+
+While this interdisciplinary scope is a strength, it may also introduce
+conceptual diffusion and increase the difficulty of rigorous evaluation.
+
+Future work should consider:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>focusing on a single domain for deep validation</li>
+<li>modularizing theoretical components</li>
+<li>separating empirical and theoretical contributions</li>
+</ul>
+
+
+<h3 class="text-xl font-bold serif mt-8 mb-4">
+Research Program
+</h3>
+
+<p class="serif text-lg">
+
+The long-term goal of this research program is to develop a complete
+<strong>physics of metastable structural organization</strong>.
+
+Key milestones include:
+
+</p>
+
+<ul class="list-disc ml-8 serif text-lg">
+<li>derivation of the structural functional from microscopic models</li>
+<li>rigorous RG treatment of metastable fields</li>
+<li>formal proof of the informational criticality principle</li>
+<li>large-scale empirical validation across biological and social systems</li>
+</ul>
+
+</section>
+  
+<footer class="mt-20 pt-10 border-t border-slate-200 text-center">
+
+<p class="serif italic text-lg mb-4">
+
+"Structural resilience emerges from the geometry of attractor basins."
+
+</p>
+
+<p class="text-sm text-slate-600 mb-3">
+
+MetastableX Framework
+
+</p>
+
+<a href="https://github.com/goldenluke/metastablex"
+class="text-indigo-600 font-semibold hover:underline">
+
+https://github.com/goldenluke/metastablex
+
+</a>
+
+<section id="affiliation" class="mb-16">
+
+<h4 class="text-xs uppercase tracking-[0.4em] text-slate-500 font-bold mb-6 text-center">
+
+AUTHOR AFFILIATION
+
+</h4>
+
+<div class="bg-slate-50 border border-slate-200 p-8 rounded-xl text-center">
+
+<p class="font-bold text-lg">
+Lucas Amaral Dourado
+</p>
+
+<p class="italic text-slate-700 mt-3">
+Medical Student
+</p>
+
+<p class="text-slate-600">
+Federal University of Tocantins (UFT), Brazil
+</p>
+
+<p class="italic text-slate-700 mt-4">
+Software Engineering Student
+</p>
+
+<p class="text-slate-600">
+UNINTER — Centro Universitário Internacional, Brazil
+</p>
+
+</div>
+
+</section>
+  
+<p class="text-xs text-slate-400 mt-6">
+
+Dourado, L. A. (2026)  
+Computational Metastability and Structural Monitoring of Complex Systems.
+
+</p>
+
+</footer>
+
+</main>
+
+</body>
+</html>
