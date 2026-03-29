@@ -1,6 +1,6 @@
 # 🧬 MetastableX — Structural Genomics as a Metastable System
 
-A systems-level pipeline for analyzing genomic sequences as continuous structural trajectories, integrating sequence-derived features, dynamical systems modeling, and epigenetic data.
+A systems-level platform for analyzing genomic sequences as continuous structural trajectories, integrating sequence-derived features, dynamical systems modeling, epigenetic data, and AI-driven interpretation.
 
 ---
 
@@ -12,7 +12,7 @@ MetastableX introduces a complementary perspective:
 
 > The genome behaves as a **continuous structured system**, governed by constraints, transitions, and metastable dynamics.
 
-This pipeline models genomic sequences as trajectories in a feature space, enabling the detection of structural transitions and their relationship with epigenetic signals.
+This platform models genomic sequences as trajectories in a feature space, enabling the detection of structural transitions and their relationship with epigenetic signals.
 
 ---
 
@@ -21,85 +21,59 @@ This pipeline models genomic sequences as trajectories in a feature space, enabl
 Given a genomic sequence:
 
 ```
-
 S = {s₁, s₂, ..., sₙ}, where sᵢ ∈ {A, T, C, G}
-
 ```
 
-We segment it into windows:
+Segment into windows:
 
 ```
-
 Sⱼ ⊂ S, |Sⱼ| = w
-
 ```
 
 Extract features:
 
 ```
-
 GC(Sⱼ) = (n_G + n_C) / w
 H(Sⱼ) = -∑ pₖ log₂(pₖ + ε)
 C(Sⱼ) = |Σ(Sⱼ)| / w
-
 ```
 
-Project into low dimension:
+Projection:
 
 ```
-
 X' = (X - μ)W
-
 ```
 
-Define structural signal:
+Structural signal:
 
 ```
-
 f(j) = PC1
-
-```
-
-Smooth:
-
-```
-
-f_s(j) = ∑ f(i) Gσ(j - i)
-
 ```
 
 Metastable risk:
 
 ```
-
 R(j) = |df_s(j)/dj|
-
 ```
-
-Normalized:
-
-```
-
-R̂(j) ∈ [0,1]
-
-````
 
 ---
 
-## 🔬 What This Pipeline Does
+## 🔬 What This Platform Does
 
 - Retrieves genes automatically from Ensembl
-- Extracts genomic regions from GRCh38
+- Extracts genomic sequences (GRCh38)
 - Computes structural features (GC, entropy, complexity)
-- Projects features using PCA
-- Builds a continuous structural signal
-- Computes metastable risk (structural transitions)
+- Projects features via PCA
+- Computes metastable risk
 - Detects hotspots
-- Integrates DNase (ENCODE / UCSC)
-- Performs statistical enrichment tests
-- Generates plots per gene
-- Exports results as CSV
-- Supports batch multi-gene analysis via CLI
+- Integrates ENCODE DNase data
+- Performs enrichment analysis
+- Generates scientific plots
+- Stores results in PostgreSQL (JSONB)
+- Provides REST API (Django)
+- Provides interactive UI (React + Plotly)
+- Uses LLM (Llama) to interpret results
+- Generates scientific text automatically
 
 ---
 
@@ -109,12 +83,12 @@ R̂(j) ∈ [0,1]
 git clone https://github.com/goldenluke/Coffea_canephora.git
 cd Coffea_canephora
 
-pip install numpy matplotlib scipy scikit-learn requests
-````
+pip install numpy matplotlib scipy scikit-learn requests django djangorestframework psycopg2-binary
+```
 
 ---
 
-## 🚀 Basic Usage
+## 🚀 CLI Usage
 
 ### Single gene
 
@@ -144,10 +118,95 @@ python metastablex_paper_pipeline.py \
 
 ---
 
+## 🌐 Full Platform (Backend + Frontend)
+
+### Start backend
+
+```bash
+cd metastablex_app/backend
+python manage.py runserver
+```
+
+---
+
+### Start frontend
+
+```bash
+cd metastablex_app/frontend
+npm start
+```
+
+---
+
+## 🔌 API Usage
+
+### Run analysis
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/run/ \
+-H "Content-Type: application/json" \
+-d '{"genes":["HBB","TP53"]}'
+```
+
+---
+
+### Get history
+
+```bash
+curl http://127.0.0.1:8000/api/analyses/
+```
+
+---
+
+### Generate paper section
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/paper/ \
+-H "Content-Type: application/json" \
+-d '{"genes":["TP53","BRCA1"]}'
+```
+
+---
+
+## 🧠 LLM Integration
+
+MetastableX integrates Llama (via Ollama):
+
+```bash
+ollama run llama3
+```
+
+Used for:
+
+- automatic interpretation
+- scientific explanation
+- paper generation
+
+---
+
+## 📊 Frontend Features
+
+The React dashboard provides:
+
+- Risk curves
+- Smoothed signals
+- Histograms
+- CDF plots
+- Boxplots
+- Heatmaps
+- Autocorrelation
+- Frequency spectrum (FFT)
+- PCA projection
+- Hotspot visualization
+- AI interpretation panel
+- Automatic paper generation
+
+---
+
 ## 🧪 Example Output
 
 ```
-🧬 TP53
+TP53
 hotspots: 8
 overlap: 5
 p-value: 0.017
@@ -156,65 +215,13 @@ SIGNIFICANT: True
 
 ---
 
-## 📊 Outputs
-
-### Per gene plots
-
-Saved in:
-
-```
-plots/<GENE>.png
-```
-
-Includes:
-
-* Metastable risk signal
-* DNase regions overlay
-
----
-
-### CSV summary
-
-```
-results.csv
-```
-
-Columns:
-
-| gene | hotspots | overlap | pvalue | significant |
-| ---- | -------- | ------- | ------ | ----------- |
-
----
-
-## 🔁 Batch Mode (Key Feature)
-
-The pipeline supports multi-gene execution using argparse:
-
-```bash
-python metastablex_paper_pipeline.py \
-  --genes HBB TP53 BRCA1 MYC
-```
-
-This will:
-
-* Fetch each gene automatically
-* Run full analysis independently
-* Generate plots per gene
-* Aggregate results into one CSV
-
----
-
 ## 🧬 Epigenetic Integration
 
-DNase hypersensitivity clusters are:
+DNase hypersensitivity clusters:
 
-* downloaded automatically
-* parsed from UCSC
-* mapped to genomic windows
-
-This allows:
-
-> direct comparison between structural transitions and chromatin accessibility
+- downloaded automatically from UCSC
+- mapped to genomic windows
+- compared against structural hotspots
 
 ---
 
@@ -227,56 +234,14 @@ H0: overlap is random
 H1: enrichment exists
 ```
 
-```
-p = (# DNase windows) / (total windows)
-```
-
 ---
 
-## 🔬 Interpretation
+## 🔁 Null Model
 
-The pipeline does **not detect genes directly**.
+Randomized genome:
 
-Instead, it captures:
-
-* structural constraints
-* transition dynamics
-* metastable organization
-
----
-
-## 📊 Observed Behavior
-
-Across multiple genes:
-
-* Some show no enrichment (HBB, BRCA1)
-* Some show significant overlap (TP53)
-* Some show low structural variance (MYC)
-
----
-
-## 🧠 Key Insight
-
-> Metastable risk is **not universally aligned with function**, but may reveal **locus-specific structural regimes**
-
----
-
-## 🌊 Multiscale Extension
-
-Includes wavelet analysis:
-
-* detects long-range structure
-* reveals low-frequency dominance
-* suggests hierarchical organization
-
----
-
-## 🔄 Null Model
-
-Supports shuffled genome comparison:
-
-* preserves nucleotide composition
-* destroys structure
+- preserves composition
+- destroys structure
 
 Result:
 
@@ -284,59 +249,13 @@ Result:
 
 ---
 
-## 🧬 Project Evolution
+## 🧠 AI-Generated Science
 
-### Phase 1 — Coffee genome
+The platform can generate:
 
-Exploration in *Coffea canephora*
-
----
-
-### Phase 2 — Structural modeling
-
-Sliding windows + PCA
-
----
-
-### Phase 3 — Metastable risk
-
-Gradient-based transition metric
-
----
-
-### Phase 4 — Null validation
-
-Real vs shuffled genomes
-
----
-
-### Phase 5 — Cross-species
-
-* E. coli
-* Arabidopsis
-* Coffee
-
----
-
-### Phase 6 — Human genome
-
-HBB (sickle cell anemia)
-
-Result:
-
-> no enrichment
-
----
-
-### Phase 7 — ENCODE integration
-
-DNase overlap
-
----
-
-### Phase 8 — Multi-gene analysis
-
-Batch execution via argparse
+- interpretation of results
+- structured explanations
+- full Results section of a paper
 
 ---
 
@@ -351,7 +270,7 @@ python metastablex_paper_pipeline.py \
 
 ---
 
-### High-resolution analysis
+### High-resolution
 
 ```bash
 --window 500
@@ -359,7 +278,7 @@ python metastablex_paper_pipeline.py \
 
 ---
 
-### Broad context analysis
+### Large context
 
 ```bash
 --flank 500000
@@ -367,7 +286,7 @@ python metastablex_paper_pipeline.py \
 
 ---
 
-### Combine everything
+### Combined
 
 ```bash
 python metastablex_paper_pipeline.py \
@@ -378,23 +297,39 @@ python metastablex_paper_pipeline.py \
 
 ---
 
+## 🧬 Project Evolution
+
+1. Coffee genome exploration (*Coffea canephora*)
+2. Structural modeling
+3. Metastable risk formulation
+4. Null validation
+5. Cross-species validation
+6. Human genome (HBB)
+7. ENCODE integration
+8. Multi-gene analysis
+9. Full-stack platform (Django + React)
+10. AI integration (Llama)
+11. Automatic scientific writing
+
+---
+
 ## ⚠️ Limitations
 
-* PCA is linear
-* window size sensitivity
-* feature simplicity
-* DNase dataset variability
-* no direct functional validation
+- PCA is linear
+- window sensitivity
+- simplified features
+- DNase variability
+- limited biological validation
 
 ---
 
 ## 🔮 Future Work
 
-* Hi-C integration (TADs)
-* ATAC-seq validation
-* nonlinear embeddings (UMAP, autoencoders)
-* gene vs intergenic comparison
-* multi-scale modeling
+- Hi-C / TAD integration
+- ATAC-seq validation
+- UMAP / deep embeddings
+- multi-scale wavelets
+- gene vs intergenic modeling
 
 ---
 
@@ -402,9 +337,9 @@ python metastablex_paper_pipeline.py \
 
 MetastableX does not replace classical genomics.
 
-It introduces a new perspective:
+It introduces:
 
-> genomic organization emerges from structural constraints and metastable dynamics
+> a structural and dynamical perspective on genome organization
 
 ---
 
@@ -422,9 +357,6 @@ MIT License
 
 ## 🚀 Final Note
 
-This project evolved from exploratory analysis in coffee genomes to structural modeling and epigenetic integration in the human genome.
+This project evolved from exploratory analysis in coffee genomes to a full platform integrating structural genomics, epigenetics, and artificial intelligence.
 
-The key conclusion:
-
-> the genome is not just a collection of genes, but a structured dynamical system operating under metastable constraints.
-
+> The genome is not just a sequence — it is a dynamical system.
