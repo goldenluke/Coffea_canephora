@@ -1,4 +1,3 @@
-
 # 🧬 MetastableX — Structural Genomics as a Metastable System
 
 > A systems-level approach to understanding genomic organization as a continuous, constrained, and metastable trajectory in feature space.
@@ -15,15 +14,6 @@ MetastableX explores a complementary idea:
 
 In this framework, a genome is treated as a trajectory through a structural feature space. Local sequence windows are converted into quantitative descriptors, projected into a lower-dimensional manifold, and analyzed as a dynamical system with transitions, stability zones, and metastable risk.
 
-This repository contains the implementation of that idea, including:
-
-- sliding-window feature extraction
-- PCA-based structural projection
-- metastable risk estimation
-- null-model comparison by sequence shuffling
-- publication-style figures
-- comparative analysis across organisms
-
 ---
 
 ## Core Concept
@@ -34,85 +24,62 @@ Given a genomic sequence:
 S = {s₁, s₂, ..., sₙ},  where sᵢ ∈ {A, T, C, G}
 ```
 
-we divide it into windows of fixed size:
+We divide it into windows:
 
 ```text
 Sⱼ ⊂ S,  |Sⱼ| = w
 ```
 
-For each window, we compute structural descriptors:
-
-GC content:
+Compute features:
 
 ```text
 GC(Sⱼ) = (n_G + n_C) / w
-```
-
-Shannon entropy:
-
-```text
 H(Sⱼ) = -∑ pₖ log₂(pₖ + ε)
-```
-
-Symbolic complexity:
-
-```text
 C(Sⱼ) = |Σ(Sⱼ)| / w
 ```
 
-These features define a vector:
-
-```text
-Xⱼ ∈ ℝ³
-```
-
-The vectors are projected with PCA:
+Project:
 
 ```text
 X' = (X - μ)W
 ```
 
-The first principal component is interpreted as a **structural axis**:
+Structural axis:
 
 ```text
 f(j) = PC1
 ```
 
-After Gaussian smoothing:
+Smoothed signal:
 
 ```text
 f_s(j) = ∑ f(i) Gσ(j - i)
 ```
 
-we define the **metastable risk**:
+Metastable risk:
 
 ```text
 R(j) = |df_s(j)/dj|
 ```
 
-and normalize it to:
+Normalized:
 
 ```text
 R̂(j) ∈ [0,1]
 ```
 
-This yields a continuous measure of structural transition intensity along the genome.
-
 ---
 
 ## Main Hypothesis
 
-The central hypothesis is:
+Genomes operate in a **metastable regime**, balancing:
 
-> genomic sequences are not random; they operate in a constrained metastable regime, balancing structural stability and flexibility.
-
-In practical terms, this means the genome should show:
-
-* smooth structural trajectories
-* non-random manifold geometry
-* lower risk than shuffled controls
-* long-range structural memory
-* organized transitions rather than chaotic fluctuations
+- structural stability
+    
+- local flexibility
+    
+- constrained transitions
+    
 
 ---
 
@@ -120,68 +87,107 @@ In practical terms, this means the genome should show:
 
 ### Phase 1 — Coffee genome
 
-The project began with an exploratory analysis of the coffee genome, specifically *Coffea canephora*.
-
-At that stage, the goal was simple: determine whether a genome could be treated as a structured signal rather than only as a collection of annotated loci.
-
-The early question was:
-
-> can a genome reveal global organization even before we ask what each gene does?
-
-That first formulation was intentionally humble and experimental. The analysis was not yet fully formalized, but it already suggested that local sequence composition was not distributed randomly.
+The project began with exploratory analysis of _Coffea canephora_, investigating whether genomic sequences exhibit global structure independent of functional annotation.
 
 ---
 
 ### Phase 2 — Formalization
 
-The next step was to turn the intuition into a reproducible pipeline:
+Development of a reproducible pipeline:
 
-* split the sequence into windows
-* extract local features
-* standardize the features
-* project them into a low-dimensional manifold
-* interpret the first component as a structural axis
-
-This step revealed something important: the points did not scatter uniformly in feature space. They formed a continuous curve-like structure, which we began to interpret as a genomic manifold.
+- sliding windows
+    
+- feature extraction
+    
+- PCA projection
+    
+- structural manifold identification
+    
 
 ---
 
 ### Phase 3 — Metastable risk
 
-Once the structural axis was established, we defined the metastable risk as the magnitude of local structural change.
+Definition of:
 
-This made it possible to ask not only where the genome is located in feature space, but how quickly it moves through that space.
+```text
+R(j) = |df(j)/dj|
+```
 
-High risk means abrupt structural transition.
-
-Low risk means continuity and relative stability.
+Interpreted as **structural transition intensity**.
 
 ---
 
 ### Phase 4 — Null model
 
-To test whether the observed organization was real, we created a null model by shuffling the sequence.
+Comparison with shuffled genomes:
 
-The shuffled genome preserves overall nucleotide composition but destroys local order.
+- preserves composition
+    
+- destroys structure
+    
 
-This allowed a direct comparison:
+Result:
 
-* real genome
-* composition-preserving random control
-
-The real genome consistently behaved as a constrained system rather than a random one.
+> real genomes show reduced structural instability.
 
 ---
 
-### Phase 5 — Comparative validation
+### Phase 5 — Cross-species validation
 
-The pipeline was then tested on different organisms, including:
+Applied to:
 
-* *Escherichia coli*
-* *Arabidopsis thaliana*
-* the coffee genome
+- _Escherichia coli_
+    
+- _Arabidopsis thaliana_
+    
+- _Coffea canephora_
+    
 
-This made it possible to compare structurally simple and structurally complex systems, and to see how the method behaves across biological scales.
+Confirmed generality of structural constraints.
+
+---
+
+### Phase 6 — Human genome validation (HBB — sickle cell anemia)
+
+The model was extended to the human genome (GRCh38), focusing on:
+
+- Chromosome 11
+    
+- Gene **HBB (Hemoglobin Subunit Beta)**
+    
+- Associated with **sickle cell anemia**
+    
+
+#### Objective
+
+Test whether metastable hotspots are enriched in functionally critical regions.
+
+#### Result
+
+- No overlap between hotspots and HBB region
+    
+- p-value ≈ 1.0
+    
+- No enrichment detected
+    
+
+#### Interpretation
+
+This result suggests:
+
+> metastable risk does **not** directly map to gene locations.
+
+Instead:
+
+- genes may reside in **structurally stable regions**
+    
+- metastability captures a **global structural property**
+    
+- structural transitions are **not gene-centric**
+    
+
+This is a key conceptual result of the project.
 
 ---
 
@@ -189,267 +195,208 @@ This made it possible to compare structurally simple and structurally complex sy
 
 ### Structural manifold
 
-The PCA projection shows that windows do not fill feature space uniformly. Instead, they lie along a curved, low-dimensional manifold.
-
-This suggests:
-
-* strong internal constraints
-* non-linear dependence between features
-* global organization beyond local composition
+Non-random distribution in feature space → constrained geometry.
 
 ---
 
 ### Structural axis
 
-The first principal component behaves like a continuous axis across the genome.
-
-Its smoothness indicates:
-
-* local correlation between neighboring windows
-* continuity of structural states
-* absence of purely random fluctuations
+Smooth trajectory → continuity across genomic regions.
 
 ---
 
 ### Metastable risk
 
-The metastable risk profile captures structural transitions along the sequence.
-
-Across real genomes, the risk tends to be:
-
-* smoother
-* more regular
-* less extreme than in shuffled controls
-
-This supports the idea that genomic organization suppresses instability rather than amplifying it.
+- lower in real genomes
+    
+- more organized than random
+    
 
 ---
 
 ### Risk distribution
 
-The distribution of risk values usually shifts toward lower values in the real genome compared to the shuffled control.
-
-This suggests that:
-
-* structural stability is not incidental
-* the real genome occupies a more constrained regime
-* randomization increases structural volatility
+Shift toward lower values → structural suppression of instability.
 
 ---
 
 ### Structural memory
 
-Autocorrelation and cumulative-risk plots suggest that genomic structure is not only local but also persistent across distance.
-
-That means the genome retains memory of prior structural states rather than behaving like independent random windows.
+Autocorrelation indicates persistence across genomic distance.
 
 ---
 
 ### Frequency spectrum
 
-Fourier analysis shows that low-frequency components dominate the structural signal.
-
-This is consistent with:
-
-* long-range organization
-* smooth transitions
-* multiscale structure
+Dominance of low frequencies → long-range organization.
 
 ---
 
-### Feature correlations
+### Multiscale structure (Wavelets)
 
-The feature correlation matrix shows that some descriptors are strongly coupled while others remain largely independent.
+Wavelet decomposition shows:
 
-This matters because it explains why PCA is effective: the genome lives in a constrained feature space with redundancy and structure.
+- energy concentrated at large scales
+    
+- absence of high-frequency noise
+    
+
+Suggests:
+
+> hierarchical and possibly fractal-like organization.
 
 ---
 
 ## Interpretation
 
-The overall interpretation is that the genome is not best described as a random string of bases, nor merely as a list of genes. It behaves more like a structured system that moves through a constrained space of possible configurations.
+The genome behaves as:
 
-This is why the concept of metastability is useful here.
+- a constrained dynamical system
+    
+- not random
+    
+- not purely gene-driven
+    
 
-A metastable system is neither frozen nor chaotic. It stays between extremes:
+Metastability captures:
 
-* stable enough to preserve function
-* flexible enough to vary and evolve
-
-That is exactly the kind of behavior this pipeline is designed to detect.
+> the balance between order and flexibility in genomic structure.
 
 ---
 
 ## Biological Meaning
 
-The analysis does not claim that every fluctuation in the genome is biologically functional. Rather, it suggests that the genome as a whole is not structurally neutral.
+The model does **not** detect genes directly.
 
-The patterns observed may reflect:
+Instead, it reveals:
 
-* physical constraints on DNA organization
-* evolutionary pressure toward robustness
-* multiscale genomic architecture
-* sequence-level regularization of variability
-
-This opens the door to a new way of thinking about sequence data: not just as annotation targets, but as dynamical objects with emergent structure.
+- structural constraints
+    
+- global organization
+    
+- emergent genomic behavior
+    
 
 ---
 
 ## Why this matters
 
-This approach offers a bridge between:
+This approach bridges:
 
-* bioinformatics
-* information theory
-* nonlinear dynamics
-* complex systems
-
-It provides a way to study genome organization even when annotation is incomplete, and it can be used as a comparative framework across organisms.
+- bioinformatics
+    
+- information theory
+    
+- complex systems
+    
+- dynamical systems
+    
 
 ---
 
 ## Repository Contents
 
-Typical outputs generated by the pipeline include:
+Includes:
 
-* PCA manifold plot
-* structural axis plot
-* metastable risk profile
-* risk distribution comparison
-* delta risk plot
-* autocorrelation plot
-* heatmap of features
-* feature correlation matrix
-* frequency spectrum
-* cumulative risk plot
-* final publication-style multi-panel figure
+- PCA manifold plots
+    
+- structural axis
+    
+- metastable risk
+    
+- hotspot detection
+    
+- wavelet analysis
+    
+- human genome validation
+    
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/your-username/metastablex.git
+git clone https://github.com/goldenluke/metastablex.git
 cd metastablex
 pip install -r requirements.txt
 ```
 
 ---
 
-## Requirements
-
-Typical dependencies include:
-
-* Python 3.10+
-* numpy
-* pandas
-* matplotlib
-* seaborn
-* scipy
-* scikit-learn
-
----
-
 ## Usage
-
-Run the pipeline with a FASTA file:
 
 ```bash
 python pipeline.py --fasta genome.fa --window 1500
 ```
 
-If you want to use an annotated genome with GFF/GTF support, you can extend the pipeline to compare hotspots with gene coordinates.
-
 ---
 
-## Example Workflow
+## Example (Human validation)
 
 ```bash
-python metastablex_full_plots.py
-python update_figure_nature.py
-python metastablex_final_full.py
+python metastablex_human_hbb.py
 ```
-
-The scripts generate figures in the `plots/` directory.
 
 ---
 
 ## Outputs
 
-Generated outputs may include:
-
-* `pca.png`
-* `structure.png`
-* `risk.png`
-* `distribution.png`
-* `delta.png`
-* `autocorrelation.png`
-* `heatmap.png`
-* `correlation.png`
-* `fft.png`
-* `cumulative.png`
-* `figure_nature_final.png`
-* `figure_nature_final.pdf`
-
----
-
-## Figure Narrative
-
-The final multi-panel figure typically contains:
-
-* **A)** Structural manifold
-* **B)** Structural axis
-* **C)** Metastable risk
-* **D)** Risk distribution
-* **E)** Structural difference and memory
-
-Together, these panels show that the genome occupies a constrained structural manifold, follows a smooth axis, and exhibits reduced instability relative to a randomized control.
+- pca.png
+    
+- structure.png
+    
+- risk.png
+    
+- distribution.png
+    
+- hotspots.png
+    
+- wavelet.png
+    
+- human_hbb.png
+    
+- figure_nature_final.png
+    
 
 ---
 
 ## Limitations
 
-This is an exploratory framework and has several limitations:
-
-* parameter sensitivity
-* dependence on window size
-* dependence on smoothing scale
-* PCA is linear and may miss nonlinear geometry
-* current complexity descriptors are intentionally simple
-* biological validation still needs to be expanded
-
-These limitations do not invalidate the approach; they define the next steps.
+- parameter sensitivity
+    
+- window size dependence
+    
+- linear PCA
+    
+- no direct functional validation
+    
+- epigenetic integration pending
+    
 
 ---
 
 ## Future Directions
 
-Possible extensions include:
-
-* nonlinear manifold learning
-* multiscale decomposition
-* gene/intergenic/CDS stratification
-* enrichment analysis
-* cross-species comparisons
-* integration with epigenetic data
-* integration with transcriptomic data
-* publication-ready comparative benchmarks
+- DNase / ATAC-seq validation
+    
+- Hi-C (TAD boundaries)
+    
+- multiscale modeling
+    
+- nonlinear manifolds
+    
+- gene vs intergenic comparison
+    
 
 ---
 
 ## Scientific Positioning
 
-MetastableX is not a replacement for classical genomics. It is a complementary view that asks a different question:
+MetastableX does not replace classical genomics.
 
-> not only what the genome contains, but how it behaves as a structured system.
+It introduces a new question:
 
-That shift in perspective is the main contribution of the project.
-
----
-
-## Citation
-
-If you use this project or build upon it, please cite the repository and describe the method as a structural/metastable analysis of genomic sequences based on sliding-window features, PCA projection, and risk-based transition profiling.
+> how does the genome behave as a structured system?
 
 ---
 
@@ -465,12 +412,12 @@ Lucas Amaral Dourado
 
 ---
 
-## Final note
+## Final Note
 
-This project began as an intuitive exploration in *Coffea canephora* and evolved into a broader framework for structural genomics.
+This project evolved from exploratory analysis in coffee genomes to structural validation in the human genome.
 
-At its core, it asks a simple question:
+The key insight:
 
-> how does a genome stay stable without becoming rigid, and flexible without becoming random?
+> genomic organization cannot be fully explained by genes alone.
 
-```
+Instead, it reflects a deeper structural regime — metastability.
