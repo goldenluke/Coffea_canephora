@@ -264,6 +264,878 @@ df.to_csv("genomic_analysis.csv", index=False)
 print("\n✅ Pipeline completo finalizado!")
 
 ================================================================================
+ARQUIVO: arabidopsis_pipeline.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from math import comb
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA (limitado)
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# GFF (genes only)
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+print("🌱 genes:", len(genes))
+
+# =========================
+# COVERAGE
+# =========================
+genome_size = df["pos"].max()
+gene_bases = sum(e - s for s,e in genes)
+gene_fraction = gene_bases / genome_size
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in genes)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = hot["in_gene"].sum()
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,3))
+print("📊 observed:", round(k/n,3))
+
+# =========================
+# BINOMIAL
+# =========================
+def binom(k,n,p):
+    prob = 0
+    for i in range(k,n+1):
+        prob += comb(n,i)*(p**i)*((1-p)**(n-i))
+    return prob
+
+pval = binom(k,n,p)
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+elif pval < 0.1:
+    print("⚠️ weak enrichment")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+
+
+================================================================================
+ARQUIVO: fix_final_pipeline.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+cat << 'PYEOF' > fix_pipeline.py
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+SEQ_LEN = len(seq)
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+# 🔥 FILTRO CRÍTICO
+genes = [(s,e) for s,e in genes if s < SEQ_LEN]
+
+print("🌱 filtered genes:", len(genes))
+
+# =========================
+# MERGE
+# =========================
+genes_sorted = sorted(genes)
+merged = []
+
+for s,e in genes_sorted:
+    if not merged or s > merged[-1][1]:
+        merged.append([s,e])
+    else:
+        merged[-1][1] = max(merged[-1][1], e)
+
+gene_bases = sum(e - s for s,e in merged)
+gene_fraction = gene_bases / SEQ_LEN
+
+print("📏 gene fraction:", round(gene_fraction,4))
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in merged)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = int(hot["in_gene"].sum())
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,4))
+print("📊 observed:", round(k/n,4))
+
+# =========================
+# BINOMIAL TEST
+# =========================
+res = binomtest(k, n, p, alternative='greater')
+print("\n📉 p-value:", res.pvalue)
+
+if res.pvalue < 0.05:
+    print("✅ enrichment detected")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+PYEOF
+
+python fix_pipeline.py
+
+
+
+================================================================================
+ARQUIVO: metastablex_full_plots.py
+================================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+import os
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    pca = PCA(n_components=2)
+    P = pca.fit_transform(X_scaled)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return X, P, smooth, risk
+
+# =========================
+# LOAD
+# =========================
+print("🧬 loading genome...")
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# REAL
+# =========================
+print("⚙ running real...")
+X, P, real_s, real_r = run_pipeline(seq)
+
+# =========================
+# SHUFFLE
+# =========================
+print("🎲 shuffle...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuf = "".join(seq_list)
+
+_, _, shuf_s, shuf_r = run_pipeline(seq_shuf)
+
+# =========================
+# 1. PCA
+# =========================
+plt.figure()
+plt.scatter(P[:,0], P[:,1], c=P[:,0], s=4)
+plt.title("PCA Manifold")
+plt.savefig("plots/pca.png", dpi=300)
+plt.close()
+
+# =========================
+# 2. STRUCTURE
+# =========================
+plt.figure()
+plt.plot(real_s)
+plt.title("Structural Axis")
+plt.savefig("plots/structure.png", dpi=300)
+plt.close()
+
+# =========================
+# 3. RISK
+# =========================
+plt.figure()
+plt.plot(real_r, label="Real")
+plt.plot(shuf_r, label="Shuffle", alpha=0.6)
+plt.legend()
+plt.title("Metastable Risk")
+plt.savefig("plots/risk.png", dpi=300)
+plt.close()
+
+# =========================
+# 4. DISTRIBUTION
+# =========================
+plt.figure()
+sns.kdeplot(real_r, label="Real", fill=True)
+sns.kdeplot(shuf_r, label="Shuffle", fill=True)
+plt.legend()
+plt.title("Risk Distribution")
+plt.savefig("plots/distribution.png", dpi=300)
+plt.close()
+
+# =========================
+# 5. DELTA
+# =========================
+delta = real_r - shuf_r
+
+plt.figure()
+plt.plot(delta)
+plt.axhline(0)
+plt.title("Delta Risk (Real - Shuffle)")
+plt.savefig("plots/delta.png", dpi=300)
+plt.close()
+
+# =========================
+# 6. AUTOCORRELATION 🔥
+# =========================
+def autocorr(x):
+    return np.correlate(x, x, mode='full')[len(x)-1:]
+
+plt.figure()
+plt.plot(autocorr(real_r)[:1000], label="Real")
+plt.plot(autocorr(shuf_r)[:1000], label="Shuffle")
+plt.legend()
+plt.title("Autocorrelation")
+plt.savefig("plots/autocorrelation.png", dpi=300)
+plt.close()
+
+# =========================
+# 7. HEATMAP FEATURES
+# =========================
+plt.figure()
+sns.heatmap(X[:500], cmap="viridis")
+plt.title("Feature Heatmap")
+plt.savefig("plots/heatmap.png", dpi=300)
+plt.close()
+
+# =========================
+# 8. CORRELATION MATRIX
+# =========================
+plt.figure()
+sns.heatmap(np.corrcoef(X.T), annot=True)
+plt.title("Feature Correlation")
+plt.savefig("plots/correlation.png", dpi=300)
+plt.close()
+
+# =========================
+# 9. FFT (PERIODICIDADE)
+# =========================
+fft = np.abs(np.fft.fft(real_r))
+
+plt.figure()
+plt.plot(fft[:1000])
+plt.title("Frequency Spectrum")
+plt.savefig("plots/fft.png", dpi=300)
+plt.close()
+
+# =========================
+# 10. CUMULATIVE PROFILE
+# =========================
+plt.figure()
+plt.plot(np.cumsum(real_r))
+plt.title("Cumulative Risk")
+plt.savefig("plots/cumulative.png", dpi=300)
+plt.close()
+
+print("🔥 ALL PLOTS GENERATED → /plots")
+
+
+
+================================================================================
+ARQUIVO: metastablex_final_full.py
+================================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    X = StandardScaler().fit_transform(X)
+
+    pca = PCA(n_components=2)
+    P = pca.fit_transform(X)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return P, smooth, risk
+
+# =========================
+# LOAD
+# =========================
+print("🧬 loading genome...")
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# REAL
+# =========================
+print("⚙ running real...")
+P, real_s, real_r = run_pipeline(seq)
+
+# =========================
+# SHUFFLE
+# =========================
+print("🎲 shuffle control...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuf = "".join(seq_list)
+
+_, shuf_s, shuf_r = run_pipeline(seq_shuf)
+
+# =========================
+# FIGURE (NATURE STYLE)
+# =========================
+print("📊 plotting...")
+
+plt.figure(figsize=(10,10))
+
+# A — PCA
+ax1 = plt.subplot(4,1,1)
+sc = ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=6)
+ax1.set_title("A) Structural Manifold", fontweight="bold")
+ax1.set_xticks([])
+ax1.set_yticks([])
+plt.colorbar(sc, ax=ax1, label="PC1")
+
+# B — STRUCTURE
+ax2 = plt.subplot(4,1,2)
+ax2.plot(real_s, linewidth=1)
+ax2.set_title("B) Structural Axis", fontweight="bold")
+
+# C — RISK
+ax3 = plt.subplot(4,1,3)
+ax3.plot(real_r, label="Real", linewidth=1.2)
+ax3.plot(shuf_r, label="Shuffled", alpha=0.6)
+ax3.legend(frameon=False)
+ax3.set_title("C) Metastable Risk", fontweight="bold")
+
+# D — DISTRIBUTION (KDE)
+ax4 = plt.subplot(4,1,4)
+sns.kdeplot(real_r, label="Real", fill=True, alpha=0.4)
+sns.kdeplot(shuf_r, label="Shuffled", fill=True, alpha=0.3)
+ax4.legend(frameon=False)
+ax4.set_title("D) Risk Distribution", fontweight="bold")
+
+plt.tight_layout()
+
+import os
+os.makedirs("plots", exist_ok=True)
+
+plt.savefig("plots/figure_nature_final.png", dpi=300)
+plt.savefig("plots/figure_nature_final.pdf")
+
+# =========================
+# STATS
+# =========================
+print("\n📊 COMPARISON")
+print("Real mean:", np.mean(real_r))
+print("Shuffle mean:", np.mean(shuf_r))
+print("Effect size:", np.mean(real_r) - np.mean(shuf_r))
+
+print("\n🔥 DONE")
+print("📁 saved in plots/")
+
+
+
+================================================================================
+ARQUIVO: plot_publication.py
+================================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_publication(P, real_s, real_r, shuf_r):
+
+    fig = plt.figure(figsize=(10,12))
+
+    # =========================
+    # A — PCA
+    # =========================
+    ax1 = plt.subplot(4,1,1)
+    sc = ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=6)
+    ax1.set_title("A) Structural Manifold", fontsize=12, fontweight="bold")
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+
+    # =========================
+    # B — STRUCTURAL AXIS
+    # =========================
+    ax2 = plt.subplot(4,1,2)
+    ax2.plot(real_s, linewidth=1)
+    ax2.set_title("B) Structural Axis", fontsize=12, fontweight="bold")
+    ax2.set_ylabel("Normalized signal")
+
+    # =========================
+    # C — RISK COMPARISON
+    # =========================
+    ax3 = plt.subplot(4,1,3)
+    ax3.plot(real_r, label="Real", linewidth=1.2)
+    ax3.plot(shuf_r, label="Shuffled", alpha=0.7, linewidth=1)
+    ax3.legend(frameon=False)
+    ax3.set_title("C) Metastable Risk", fontsize=12, fontweight="bold")
+
+    # =========================
+    # D — DISTRIBUTION
+    # =========================
+    ax4 = plt.subplot(4,1,4)
+    ax4.hist(real_r, bins=50, alpha=0.7, label="Real")
+    ax4.hist(shuf_r, bins=50, alpha=0.5, label="Shuffled")
+    ax4.legend(frameon=False)
+    ax4.set_title("D) Risk Distribution", fontsize=12, fontweight="bold")
+
+    plt.tight_layout()
+    plt.savefig("plots/figure_1_publication.png", dpi=300)
+    plt.savefig("plots/figure_1_publication.pdf")
+
+    print("📊 figure saved: plots/figure_1_publication.(png/pdf)")
+
+
+# =========================
+# FIGURA 2 — DELTA
+# =========================
+def plot_delta(real_r, shuf_r):
+
+    delta = real_r - shuf_r
+
+    plt.figure(figsize=(10,4))
+    plt.plot(delta, linewidth=1)
+    plt.axhline(0, linestyle="--")
+    plt.title("Difference (Real - Shuffled)", fontweight="bold")
+    plt.ylabel("Δ Risk")
+
+    plt.tight_layout()
+    plt.savefig("plots/figure_2_delta.png", dpi=300)
+    plt.savefig("plots/figure_2_delta.pdf")
+
+    print("📊 delta figure saved")
+
+
+
+
+================================================================================
+ARQUIVO: fix_pipeline.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+SEQ_LEN = len(seq)
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+# 🔥 FILTRO CRÍTICO
+genes = [(s,e) for s,e in genes if s < SEQ_LEN]
+
+print("🌱 filtered genes:", len(genes))
+
+# =========================
+# MERGE
+# =========================
+genes_sorted = sorted(genes)
+merged = []
+
+for s,e in genes_sorted:
+    if not merged or s > merged[-1][1]:
+        merged.append([s,e])
+    else:
+        merged[-1][1] = max(merged[-1][1], e)
+
+gene_bases = sum(e - s for s,e in merged)
+gene_fraction = gene_bases / SEQ_LEN
+
+print("📏 gene fraction:", round(gene_fraction,4))
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in merged)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = int(hot["in_gene"].sum())
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,4))
+print("📊 observed:", round(k/n,4))
+
+# =========================
+# BINOMIAL TEST
+# =========================
+res = binomtest(k, n, p, alternative='greater')
+print("\n📉 p-value:", res.pvalue)
+
+if res.pvalue < 0.05:
+    print("✅ enrichment detected")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+
+
+================================================================================
 ARQUIVO: README.md
 ================================================================================
 
@@ -353,31 +1225,38 @@ The pipeline reveals:
 git clone https://github.com/goldenluke/Coffea_canephora.git
 cd Coffea_canephora
 pip install -r requirements.txt
-``
+```
 
-▶️ Usage
+## ▶️ Usage
+
 python genomic_full_pipeline.py --fasta your_sequence.fa --window 2000 --k 3
-⚙️ Parameters
+
+## ⚙️ Parameters
+
 Parameter	Description
 --fasta	Input FASTA file
 --window	Window size (recommended: 2000–3000)
 --k	Number of clusters
 --kmer	k-mer size (default: 3)
-📊 Outputs
-📄 Files
+
+## 📊 Outputs
+## 📄 Files
 genomic_full_analysis.csv → full dataset
 genomic_regions.bed → genome browser file
-📈 Visualizations
+
+## 📈 Visualizations
 PCA (structural manifold)
 Cluster distribution
 Instability profile
 Critical regions
 Coding score signal
-🧠 Example Insights
+
+## 🧠 Example Insights
 The genome is not homogeneous
 Structure emerges from multiple interacting features
 Instability highlights functional or structural boundaries
-🧬 BED File Usage
+
+## 🧬 BED File Usage
 
 Open in:
 
@@ -385,7 +1264,7 @@ IGV (Integrative Genomics Viewer)
 UCSC Genome Browser
 🔥 Feature Importance
 
-Genomic structure is influenced by:
+## Genomic structure is influenced by:
 
 GC content
 Entropy
@@ -394,38 +1273,36 @@ Specific k-mer patterns
 
 This confirms a multifactorial organization.
 
-⚠️ Limitations
+## ⚠️ Limitations
+
 Coding detection is heuristic (not ORF-based)
 KMeans imposes hard clustering
 No validation with real annotations yet
-🚀 Future Work
+
+## 🚀 Future Work
+
 ORF detection (biological validation)
 Hidden Markov Models
 Multi-genome comparison
 Integration with GFF/GTF annotations
 Interactive visualization dashboard
-🧠 Conceptual Contribution
+
+## 🧠 Conceptual Contribution
 
 This project proposes that:
 
 Genomic organization can be described as a metastable system, where structural states emerge from the interaction of compositional and informational features.
 
-📄 Citation (suggested)
-@misc{dourado2026genomic,
-  title={Detection of Metastable Structural Domains in Genomic Sequences Using Hybrid Feature Clustering},
-  author={Dourado, Lucas},
-  year={2026}
-}
-👨‍💻 Author
+## 👨‍💻 Author
 
 Lucas Dourado
 
 Medicine student
 Computational modeling enthusiast
 Focus: complex systems, health data, and bioinformatics
-⭐ Support
 
-If you found this useful:
+## License
+MIT
 
 Star the repository
 Share with others
@@ -433,6 +1310,803 @@ Contribute improvements
 📜 License
 
 MIT License
+
+
+================================================================================
+ARQUIVO: metastablex_full_pipeline.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+import argparse
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.ndimage import gaussian_filter1d
+from collections import Counter
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+
+# =========================
+# ORF HEURISTIC
+# =========================
+def coding_score(seq):
+    start = ["ATG"]
+    stop = ["TAA","TAG","TGA"]
+    score = 0
+
+    for i in range(0, len(seq)-3, 3):
+        codon = seq[i:i+3]
+        if codon in start:
+            score += 2
+        if codon in stop:
+            score -= 1
+
+    return score / (len(seq)/3)
+
+
+# =========================
+# FEATURE EXTRACTION
+# =========================
+def extract_features(seq, window):
+    feats = []
+    positions = []
+
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+
+        feats.append([
+            gc(w),
+            entropy(w),
+            complexity(w),
+            coding_score(w)
+        ])
+
+        positions.append(i)
+
+    return np.array(feats), np.array(positions)
+
+
+# =========================
+# MULTISCALE
+# =========================
+def multiscale(seq, windows):
+
+    signals = []
+
+    for w in windows:
+        X, _ = extract_features(seq, w)
+        X = StandardScaler().fit_transform(X)
+
+        s = PCA(n_components=1).fit_transform(X).flatten()
+
+        interp = np.interp(
+            np.linspace(0, len(s), num=3000),
+            np.arange(len(s)),
+            s
+        )
+
+        signals.append(interp)
+
+    return np.mean(signals, axis=0)
+
+
+# =========================
+# GFF PARSER (opcional)
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) >= 5:
+                start = int(parts[3])
+                end = int(parts[4])
+                genes.append((start, end))
+    return genes
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+
+    os.makedirs("plots", exist_ok=True)
+
+    print("🧬 Loading FASTA...")
+    seq = load_fasta(args.fasta)
+
+    print("🔥 Multiscale signal...")
+    signal = multiscale(seq, [500,1500,3000,6000])
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    print("🧠 Clustering...")
+    km = KMeans(n_clusters=3, random_state=42)
+    domain = km.fit_predict(smooth.reshape(-1,1))
+
+    print("⚡ Risk...")
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    # =========================
+    # CODING SCORE FINAL
+    # =========================
+    coding = []
+    win = int(len(seq)/len(smooth))
+
+    for i in range(len(smooth)):
+        start = i*win
+        end = start + win
+        w = seq[start:end]
+        coding.append(coding_score(w))
+
+    coding = np.array(coding)
+
+    # =========================
+    # DATAFRAME
+    # =========================
+    df = pd.DataFrame({
+        "pos": np.arange(len(smooth))*win,
+        "structure": smooth,
+        "risk": risk,
+        "domain": domain,
+        "coding_score": coding
+    })
+
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    # =========================
+    # BED EXPORT
+    # =========================
+    with open("genomic_metastablex.bed","w") as f:
+        for i,row in df.iterrows():
+            f.write(f"chr1\t{int(row.pos)}\t{int(row.pos+win)}\t{row.domain}\n")
+
+    # =========================
+    # PCA VISUAL
+    # =========================
+    X,_ = extract_features(seq, 3000)
+    X = StandardScaler().fit_transform(X)
+    P = PCA(n_components=2).fit_transform(X)
+
+    # =========================
+    # PLOTS (paper)
+    # =========================
+    x = df["pos"]
+
+    plt.figure(figsize=(6,6))
+    plt.scatter(P[:,0], P[:,1], s=5)
+    plt.gca().set_aspect('equal')
+    plt.title("Genomic Structural Manifold")
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    fig, axs = plt.subplots(4,1, figsize=(10,10), sharex=True)
+
+    axs[0].scatter(P[:,0], P[:,1], s=5)
+    axs[0].set_title("A) Structural Manifold")
+
+    axs[1].plot(x, smooth)
+    axs[1].set_title("B) Structural Axis")
+
+    axs[2].plot(x, risk)
+    axs[2].set_title("C) Metastable Risk")
+
+    axs[3].plot(x, coding)
+    axs[3].set_title("D) Coding Potential")
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+
+    # =========================
+    # GFF VALIDATION
+    # =========================
+    if args.gff:
+        print("🧬 Validating with GFF...")
+        genes = load_gff(args.gff)
+
+        overlap = 0
+
+        for g_start, g_end in genes:
+            mask = (df["pos"] >= g_start) & (df["pos"] <= g_end)
+            overlap += df[mask]["risk"].mean()
+
+        print(f"🔥 Mean risk in genes: {overlap/len(genes):.4f}")
+
+    print("🚀 DONE")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--gff", default=None)
+
+    args = parser.parse_args()
+    main(args)
+
+
+================================================================================
+ARQUIVO: pipeline_fixed.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# LOAD GFF (genes only)
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+print("🌱 genes:", len(genes))
+
+# =========================
+# MERGE INTERVALS (FIX CRITICAL BUG)
+# =========================
+genes_sorted = sorted(genes)
+merged = []
+
+for s,e in genes_sorted:
+    if not merged or s > merged[-1][1]:
+        merged.append([s,e])
+    else:
+        merged[-1][1] = max(merged[-1][1], e)
+
+gene_bases = sum(e - s for s,e in merged)
+gene_fraction = gene_bases / len(seq)
+
+print("📏 gene fraction:", round(gene_fraction,4))
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in merged)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = int(hot["in_gene"].sum())
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,4))
+print("📊 observed:", round(k/n,4))
+
+# =========================
+# BINOMIAL TEST (CORRECT)
+# =========================
+res = binomtest(k, n, p, alternative='greater')
+pval = res.pvalue
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+elif pval < 0.1:
+    print("⚠️ weak enrichment")
+else:
+    print("❌ no enrichment")
+
+# =========================
+# SAVE RESULTS
+# =========================
+df.to_csv("genomic_metastablex_fixed.csv", index=False)
+
+print("\n💾 saved: genomic_metastablex_fixed.csv")
+print("🚀 DONE")
+
+
+================================================================================
+ARQUIVO: genomic_metastablex_v2.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+import argparse
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.ndimage import gaussian_filter1d
+from collections import Counter
+
+
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+
+def build(seq, window):
+    data = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        data.append({
+            "pos": i,
+            "gc": gc(w),
+            "entropy": entropy(w),
+            "complexity": len(set(w))/len(w)
+        })
+    return pd.DataFrame(data)
+
+
+def main(args):
+    os.makedirs("plots", exist_ok=True)
+
+    seq = load_fasta(args.fasta)
+    df = build(seq, args.window)
+
+    X = df.drop(columns=["pos"]).values
+    X = StandardScaler().fit_transform(X)
+
+    pca = PCA(n_components=2)
+    P = pca.fit_transform(X)
+
+    df["pca1"] = P[:,0]
+    df["pca2"] = P[:,1]
+
+    # 🔥 smoothing forte (multi-scale simplificado)
+    smooth = gaussian_filter1d(df["pca1"], sigma=10)
+    smooth = gaussian_filter1d(smooth, sigma=5)
+
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    # 🔥 cluster contínuo
+    km = KMeans(n_clusters=3, random_state=42)
+    df["domain"] = km.fit_predict(smooth.reshape(-1,1))
+
+    # 🔥 risco REAL
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=3)
+    risk = risk / np.max(risk)
+
+    df["risk"] = risk
+
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    x = np.arange(len(df))
+
+    # PCA
+    plt.figure(figsize=(6,6))
+    plt.scatter(df["pca1"], df["pca2"], c=df["domain"], s=5)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    # STRUCTURE
+    plt.figure()
+    plt.plot(x, smooth)
+    plt.savefig("plots/structure.png", dpi=300)
+    plt.close()
+
+    # RISK
+    plt.figure()
+    plt.plot(x, risk)
+    plt.savefig("plots/risk.png", dpi=300)
+    plt.close()
+
+    # PAPER
+    fig, axs = plt.subplots(3,1, figsize=(8,8), sharex=True)
+
+    axs[0].scatter(df["pca1"], df["pca2"], c=df["domain"], s=5)
+    axs[0].set_aspect('equal', adjustable='box')
+
+    axs[1].plot(x, smooth)
+    axs[2].plot(x, risk)
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+
+    print("🔥 versão científica pronta")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--window", type=int, default=3000)
+    args = parser.parse_args()
+
+    main(args)
+
+
+================================================================================
+ARQUIVO: metastablex_arabidopsis_full.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+echo "🌱 MetastableX + Arabidopsis (PLANT VALIDATION)"
+
+mkdir -p data plots
+
+# =========================
+# DOWNLOAD (Arabidopsis)
+# =========================
+echo "⬇️ downloading genome..."
+wget -q -O data/arabidopsis.fa.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/GCF_000001735.4_TAIR10.1_genomic.fna.gz
+
+echo "⬇️ downloading GFF..."
+wget -q -O data/arabidopsis.gff.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/GCF_000001735.4_TAIR10.1_genomic.gff.gz
+
+gunzip -f data/arabidopsis.fa.gz
+gunzip -f data/arabidopsis.gff.gz
+
+# =========================
+# PIPELINE
+# =========================
+cat << 'PYEOF' > arabidopsis_pipeline.py
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from math import comb
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA (limitado)
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# GFF (genes only)
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+print("🌱 genes:", len(genes))
+
+# =========================
+# COVERAGE
+# =========================
+genome_size = df["pos"].max()
+gene_bases = sum(e - s for s,e in genes)
+gene_fraction = gene_bases / genome_size
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in genes)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = hot["in_gene"].sum()
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,3))
+print("📊 observed:", round(k/n,3))
+
+# =========================
+# BINOMIAL
+# =========================
+def binom(k,n,p):
+    prob = 0
+    for i in range(k,n+1):
+        prob += comb(n,i)*(p**i)*((1-p)**(n-i))
+    return prob
+
+pval = binom(k,n,p)
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+elif pval < 0.1:
+    print("⚠️ weak enrichment")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+PYEOF
+
+python arabidopsis_pipeline.py
+
+
+
+================================================================================
+ARQUIVO: metastablex_analysis.py
+================================================================================
+
+import pandas as pd
+import numpy as np
+
+print("📊 loading...")
+df = pd.read_csv("genomic_metastablex.csv")
+
+# =========================
+# HOTSPOTS
+# =========================
+hotspots = df[df["hotspot"] == 1]
+
+print("🔥 total hotspots:", len(hotspots))
+
+# =========================
+# BASIC STATS
+# =========================
+mean_risk = df["risk"].mean()
+std_risk = df["risk"].std()
+
+hotspots["zscore"] = (hotspots["risk"] - mean_risk) / std_risk
+
+# =========================
+# TOP HOTSPOTS
+# =========================
+top = hotspots.sort_values("risk", ascending=False).head(50)
+top.to_csv("top_hotspots.csv", index=False)
+
+print("🏆 top hotspots saved")
+
+# =========================
+# REGION CLASSIFICATION
+# =========================
+def classify(r):
+    if r > 0.8:
+        return "CRITICAL"
+    elif r > 0.5:
+        return "HIGH"
+    elif r > 0.3:
+        return "MODERATE"
+    else:
+        return "LOW"
+
+df["risk_class"] = df["risk"].apply(classify)
+
+# =========================
+# DISTRIBUTION
+# =========================
+dist = df["risk_class"].value_counts()
+print("\n📊 risk distribution:")
+print(dist)
+
+# =========================
+# SPATIAL CLUSTERING
+# =========================
+clusters = []
+current = []
+
+for i,row in df.iterrows():
+    if row.hotspot == 1:
+        current.append(row.pos)
+    else:
+        if current:
+            clusters.append((min(current), max(current)))
+            current = []
+
+print("\n🧬 hotspot clusters:", len(clusters))
+
+# =========================
+# SAVE CLUSTERS
+# =========================
+with open("hotspot_clusters.bed","w") as f:
+    for s,e in clusters:
+        f.write(f"chr1\t{int(s)}\t{int(e)}\tCLUSTER\n")
+
+# =========================
+# SUMMARY METRICS
+# =========================
+coverage = len(hotspots)/len(df)
+
+print("\n📈 coverage:", coverage)
+print("📈 mean hotspot risk:", hotspots["risk"].mean())
+
+print("\n🚀 ANALYSIS COMPLETE")
 
 
 ================================================================================
@@ -827,6 +2501,2251 @@ plt.show()
 df.to_csv("resultado_genomico.csv", index=False)
 
 print("\n✅ Finalizado!")
+
+================================================================================
+ARQUIVO: final_analysis.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+from collections import Counter
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+
+# =========================
+# PIPELINE CORE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    X = StandardScaler().fit_transform(X)
+
+    signal = PCA(n_components=1).fit_transform(X).flatten()
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return smooth, risk
+
+
+# =========================
+# LOAD REAL
+# =========================
+print("🧬 loading real genome...")
+seq = load_fasta("data/arabidopsis.fa")
+
+real_s, real_r = run_pipeline(seq)
+
+# =========================
+# SHUFFLE CONTROL
+# =========================
+print("🎲 generating shuffle control...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuffled = "".join(seq_list)
+
+shuf_s, shuf_r = run_pipeline(seq_shuffled)
+
+# =========================
+# PCA (real only)
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+P = PCA(n_components=2).fit_transform(X)
+
+# =========================
+# FIGURA FINAL (NATURE STYLE)
+# =========================
+fig = plt.figure(figsize=(12,10))
+
+# A — MANIFOLD
+ax1 = plt.subplot(4,1,1)
+ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=4)
+ax1.set_title("A) Structural Manifold")
+ax1.set_aspect('equal')
+
+# B — STRUCTURE
+ax2 = plt.subplot(4,1,2)
+ax2.plot(real_s)
+ax2.set_title("B) Structural Axis (Real)")
+
+# C — RISK REAL vs SHUFFLE
+ax3 = plt.subplot(4,1,3)
+ax3.plot(real_r, label="Real")
+ax3.plot(shuf_r, alpha=0.6, label="Shuffled")
+ax3.legend()
+ax3.set_title("C) Metastable Risk Comparison")
+
+# D — DISTRIBUTION
+ax4 = plt.subplot(4,1,4)
+ax4.hist(real_r, bins=50, alpha=0.7, label="Real")
+ax4.hist(shuf_r, bins=50, alpha=0.5, label="Shuffled")
+ax4.legend()
+ax4.set_title("D) Risk Distribution")
+
+plt.tight_layout()
+plt.savefig("plots/nature_figure.png", dpi=300)
+
+# =========================
+# STATISTICS
+# =========================
+print("\n📊 COMPARISON")
+
+print("Real mean risk:", np.mean(real_r))
+print("Shuffle mean risk:", np.mean(shuf_r))
+
+print("Real std:", np.std(real_r))
+print("Shuffle std:", np.std(shuf_r))
+
+# simple effect size
+effect = np.mean(real_r) - np.mean(shuf_r)
+print("\n🔥 effect size:", effect)
+
+if effect > 0:
+    print("✅ real genome shows stronger structure than random")
+else:
+    print("⚠️ no clear difference")
+
+print("\n📊 saved: plots/nature_figure.png")
+print("🚀 DONE")
+
+
+================================================================================
+ARQUIVO: genomic_metastablex_pipeline.py
+================================================================================
+
+import argparse
+import numpy as np
+import pandas as pd
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from collections import Counter
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+from metastablex.qwan.runner import run_qwan
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path, "r") as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def gc_content(seq):
+    return (seq.count("G") + seq.count("C")) / len(seq)
+
+
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v / len(seq) for v in counts.values()]
+    return -sum(p * np.log2(p + 1e-9) for p in probs)
+
+
+def complexity(seq):
+    return len(set(seq)) / len(seq)
+
+
+def kmer_freq(seq, k=3):
+    kmers = [seq[i:i+k] for i in range(len(seq)-k+1)]
+    counts = Counter(kmers)
+    total = sum(counts.values())
+    return {k: v / total for k, v in counts.items()}
+
+
+# =========================
+# DATASET
+# =========================
+def build_dataset(sequence, window):
+    data = []
+
+    for i in range(0, len(sequence) - window, window):
+        w = sequence[i:i+window]
+
+        features = {
+            "start": i,
+            "end": i + window,
+            "gc": gc_content(w),
+            "entropy": entropy(w),
+            "complexity": complexity(w),
+        }
+
+        features.update(kmer_freq(w))
+        data.append(features)
+
+    return pd.DataFrame(data).fillna(0)
+
+
+# =========================
+# METASTABLEX
+# =========================
+def run_metastablex_series(pca1, step=15):
+    risks = np.zeros(len(pca1))
+
+    print(f"⚡ MetastableX step={step}")
+
+    for i in range(0, len(pca1), step):
+        if i % 200 == 0:
+            print(f"{i}/{len(pca1)}")
+
+        window = pca1[max(0, i-5):i+5]
+
+        if len(window) < 5:
+            continue
+
+        try:
+            res = run_qwan(window)
+            risks[i] = res.get("risk", 0)
+        except:
+            continue
+
+    # interpolação
+    risks = pd.Series(risks).replace(0, np.nan).interpolate().fillna(0).values
+
+    # normalização
+    if np.max(risks) > 0:
+        risks = risks / np.max(risks)
+
+    return risks
+
+
+# =========================
+# PLOTS (CORRIGIDOS)
+# =========================
+def make_plots(df):
+    os.makedirs("plots", exist_ok=True)
+
+    x = np.arange(len(df))
+
+    plt.rcParams.update({
+        "font.size": 10,
+        "figure.figsize": (10, 4)
+    })
+
+    # PCA
+    plt.figure()
+    plt.scatter(df["pca1"], df["pca2"], c=df["cluster"], s=6)
+    plt.title("Genomic Structural Manifold (PCA)")
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.axis("equal")
+    plt.tight_layout()
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    # Structure (corrigido)
+    plt.figure()
+    plt.plot(x, df["cluster_smooth"], linewidth=1.2, label="cluster")
+    plt.plot(x, df["instability"], linestyle="--", linewidth=1, label="instability")
+    plt.legend()
+    plt.title("Structural Domains")
+    plt.xlabel("Genomic position")
+    plt.tight_layout()
+    plt.savefig("plots/structure.png", dpi=300)
+    plt.close()
+
+    # Risk
+    plt.figure()
+    plt.plot(x, df["meta_risk"], linewidth=1.5)
+    plt.title("Metastable Risk (normalized)")
+    plt.xlabel("Genomic position")
+    plt.tight_layout()
+    plt.savefig("plots/risk.png", dpi=300)
+    plt.close()
+
+    # FIGURA FINAL
+    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+
+    axs[0].scatter(df["pca1"], df["pca2"], c=df["cluster"], s=5)
+    axs[0].set_title("A) PCA")
+    axs[0].axis("equal")
+
+    axs[1].plot(x, df["cluster_smooth"])
+    axs[1].set_title("B) Structural Domains")
+
+    axs[2].plot(x, df["meta_risk"])
+    axs[2].set_title("C) Metastable Risk")
+
+    axs[2].set_xlabel("Genomic Position")
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+    plt.close()
+
+    print("📊 plots salvos em /plots")
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+    print("🧬 Loading FASTA...")
+    seq = load_fasta(args.fasta)
+
+    print("🔬 Building dataset...")
+    df = build_dataset(seq, args.window)
+
+    features = [c for c in df.columns if c not in ["start", "end"]]
+    X = df[features].values
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    print("🤖 Clustering...")
+    kmeans = KMeans(n_clusters=args.k, random_state=42)
+    df["cluster"] = kmeans.fit_predict(X_scaled)
+
+    # 🔥 suavização CORRETA
+    smooth = gaussian_filter1d(df["cluster"].astype(float), sigma=2)
+    df["cluster_smooth"] = np.round(smooth)
+
+    print("📉 PCA...")
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_scaled)
+
+    df["pca1"] = X_pca[:, 0]
+    df["pca2"] = X_pca[:, 1]
+
+    print("⚡ Instability...")
+    df["instability"] = np.concatenate([[0], np.abs(np.diff(df["cluster_smooth"]))])
+
+    print("🔥 MetastableX...")
+    df["meta_risk"] = run_metastablex_series(df["pca1"].values)
+
+    print("💾 Saving CSV...")
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    print("📊 Plotting...")
+    make_plots(df)
+
+    print("🎉 DONE")
+
+
+# =========================
+# CLI
+# =========================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--window", type=int, default=3000)
+    parser.add_argument("--k", type=int, default=3)
+
+    args = parser.parse_args()
+    main(args)
+
+
+
+================================================================================
+ARQUIVO: genomic_metastablex_final.py
+================================================================================
+
+import argparse
+import numpy as np
+import pandas as pd
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def gc_content(seq):
+    return (seq.count("G") + seq.count("C")) / len(seq)
+
+
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+
+def complexity(seq):
+    return len(set(seq)) / len(seq)
+
+
+def kmer_freq(seq, k=3):
+    kmers = [seq[i:i+k] for i in range(len(seq)-k+1)]
+    counts = Counter(kmers)
+    total = sum(counts.values())
+    return {k: v/total for k, v in counts.items()}
+
+
+# =========================
+# DATASET
+# =========================
+def build_dataset(seq, window):
+    data = []
+
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+
+        f = {
+            "pos": i,
+            "gc": gc_content(w),
+            "entropy": entropy(w),
+            "complexity": complexity(w),
+        }
+
+        f.update(kmer_freq(w))
+        data.append(f)
+
+    return pd.DataFrame(data).fillna(0)
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+
+    os.makedirs("plots", exist_ok=True)
+
+    print("🧬 Loading...")
+    seq = load_fasta(args.fasta)
+
+    print("🔬 Features...")
+    df = build_dataset(seq, args.window)
+
+    X = df.drop(columns=["pos"]).values
+
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+
+    print("📉 PCA...")
+    pca = PCA(n_components=2)
+    P = pca.fit_transform(X)
+
+    df["pca1"] = P[:,0]
+    df["pca2"] = P[:,1]
+
+    # =========================
+    # 🔥 ESTRUTURA CONTÍNUA
+    # =========================
+    smooth = gaussian_filter1d(df["pca1"], sigma=3)
+
+    # normaliza
+    smooth = (smooth - smooth.min()) / (smooth.max() - smooth.min())
+
+    # discretiza suavemente (domínios)
+    domains = np.digitize(smooth, bins=[0.33, 0.66])
+    df["domain"] = domains
+
+    # =========================
+    # ⚡ INSTABILIDADE REAL
+    # =========================
+    grad = np.abs(np.gradient(smooth))
+    grad = grad / np.max(grad)
+
+    df["risk"] = grad
+
+    # =========================
+    # 💾 SAVE
+    # =========================
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    # =========================
+    # 📊 PLOTS (FIXOS)
+    # =========================
+    x = np.arange(len(df))
+
+    plt.rcParams.update({
+        "figure.figsize": (10,4),
+        "font.size": 10
+    })
+
+    # PCA
+    plt.figure()
+    plt.scatter(df["pca1"], df["pca2"], c=df["domain"], s=6)
+    plt.axis("equal")
+    plt.title("Genomic Structural Manifold")
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    # STRUCTURE
+    plt.figure()
+    plt.plot(x, smooth, linewidth=1.5)
+    plt.title("Continuous Structural Axis")
+    plt.savefig("plots/structure.png", dpi=300)
+    plt.close()
+
+    # RISK
+    plt.figure()
+    plt.plot(x, df["risk"], linewidth=1.5)
+    plt.title("Metastable Risk")
+    plt.savefig("plots/risk.png", dpi=300)
+    plt.close()
+
+    # PAPER FIGURE
+    fig, axs = plt.subplots(3,1, figsize=(10,8), sharex=True)
+
+    axs[0].scatter(df["pca1"], df["pca2"], c=df["domain"], s=5)
+    axs[0].axis("equal")
+    axs[0].set_title("A) Structural Manifold")
+
+    axs[1].plot(x, smooth)
+    axs[1].set_title("B) Structural Axis")
+
+    axs[2].plot(x, df["risk"])
+    axs[2].set_title("C) Metastable Risk")
+
+    axs[2].set_xlabel("Genomic Position")
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+    plt.close()
+
+    print("🔥 DONE (AGORA SIM)")
+
+# =========================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--window", type=int, default=3000)
+
+    args = parser.parse_args()
+    main(args)
+
+
+
+================================================================================
+ARQUIVO: metastablex_ecoli_full.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+echo "🧬 MetastableX + E. coli (FULL PIPELINE)"
+
+mkdir -p data plots
+
+# =========================
+# DOWNLOAD (E. coli)
+# =========================
+echo "⬇️ downloading genome..."
+wget -q -O data/ecoli.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz
+
+echo "⬇️ downloading GFF..."
+wget -q -O data/ecoli.gff.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.gff.gz
+
+gunzip -f data/ecoli.fna.gz
+gunzip -f data/ecoli.gff.gz
+
+# =========================
+# PIPELINE + ENRICHMENT
+# =========================
+cat << 'PYEOF' > ecoli_pipeline.py
+import numpy as np
+import pandas as pd
+from collections import Counter
+import os
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from math import comb
+
+print("🧬 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+seq = load_fasta("data/ecoli.fna")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1000)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+smooth = gaussian_filter1d(signal, sigma=10)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=3)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# LOAD GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/ecoli.gff")
+
+print("🧬 genes:", len(genes))
+
+# =========================
+# GENE COVERAGE
+# =========================
+genome_size = df["pos"].max()
+
+gene_bases = sum(e - s for s,e in genes)
+gene_fraction = gene_bases / genome_size
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in genes)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = hot["in_gene"].sum()
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,3))
+print("📊 observed:", round(k/n,3))
+
+# =========================
+# BINOMIAL
+# =========================
+def binom(k,n,p):
+    prob = 0
+    for i in range(k,n+1):
+        prob += comb(n,i)*(p**i)*((1-p)**(n-i))
+    return prob
+
+pval = binom(k,n,p)
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+PYEOF
+
+python ecoli_pipeline.py
+
+
+
+================================================================================
+ARQUIVO: update_figure_nature.py
+================================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+import os
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return X, P, smooth, risk
+
+# =========================
+# LOAD
+# =========================
+print("🧬 loading genome...")
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# REAL
+# =========================
+print("⚙ running real...")
+X, P, real_s, real_r = run_pipeline(seq)
+
+# =========================
+# SHUFFLE
+# =========================
+print("🎲 shuffle...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuf = "".join(seq_list)
+
+_, _, shuf_s, shuf_r = run_pipeline(seq_shuf)
+
+# =========================
+# AUTOCORR
+# =========================
+def autocorr(x):
+    return np.correlate(x, x, mode='full')[len(x)-1:]
+
+ac_real = autocorr(real_r)[:800]
+ac_shuf = autocorr(shuf_r)[:800]
+
+# =========================
+# DELTA
+# =========================
+delta = real_r - shuf_r
+
+# =========================
+# FIGURA FINAL
+# =========================
+plt.figure(figsize=(12,14))
+
+# A — PCA
+ax1 = plt.subplot(5,1,1)
+sc = ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=5)
+ax1.set_title("A) Structural Manifold", fontweight="bold")
+ax1.set_xticks([])
+ax1.set_yticks([])
+plt.colorbar(sc, ax=ax1, label="PC1")
+
+# B — STRUCTURE
+ax2 = plt.subplot(5,1,2)
+ax2.plot(real_s)
+ax2.set_title("B) Structural Axis", fontweight="bold")
+
+# C — RISK
+ax3 = plt.subplot(5,1,3)
+ax3.plot(real_r, label="Real")
+ax3.plot(shuf_r, label="Shuffle", alpha=0.6)
+ax3.legend(frameon=False)
+ax3.set_title("C) Metastable Risk", fontweight="bold")
+
+# D — DISTRIBUTION
+ax4 = plt.subplot(5,1,4)
+sns.kdeplot(real_r, label="Real", fill=True, alpha=0.4)
+sns.kdeplot(shuf_r, label="Shuffle", fill=True, alpha=0.3)
+ax4.legend(frameon=False)
+ax4.set_title("D) Risk Distribution", fontweight="bold")
+
+# E — DELTA + AUTOCORR 🔥
+ax5 = plt.subplot(5,1,5)
+ax5.plot(delta[:2000], label="Delta (Real-Shuffle)", alpha=0.7)
+ax5.plot(ac_real[:500]/np.max(ac_real), label="Autocorr Real")
+ax5.plot(ac_shuf[:500]/np.max(ac_shuf), label="Autocorr Shuffle")
+ax5.legend(frameon=False)
+ax5.set_title("E) Structural Difference & Memory", fontweight="bold")
+
+plt.tight_layout()
+plt.savefig("plots/figure_nature_final.png", dpi=300)
+plt.savefig("plots/figure_nature_final.pdf")
+
+print("🔥 UPDATED FIGURE SAVED → plots/figure_nature_final")
+
+
+
+================================================================================
+ARQUIVO: metastablex_enrichment.py
+================================================================================
+
+import pandas as pd
+import numpy as np
+from math import comb
+
+print("📊 loading data...")
+
+df = pd.read_csv("genomic_metastablex.csv")
+
+# =========================
+# LOAD GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.strip().split("\t")
+            if len(p) > 4:
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/genes.gff")
+
+print("🧬 genes loaded:", len(genes))
+
+# =========================
+# TOTAL GENOME COVERAGE BY GENES
+# =========================
+genome_size = df["pos"].max()
+
+gene_bases = 0
+for s,e in genes:
+    gene_bases += (e - s)
+
+gene_fraction = gene_bases / genome_size
+
+print("📏 gene coverage fraction:", round(gene_fraction,4))
+
+# =========================
+# HOTSPOT OVERLAP
+# =========================
+def in_gene(pos):
+    for s,e in genes:
+        if s <= pos <= e:
+            return True
+    return False
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hotspots = df[df["hotspot"] == 1]
+
+k = hotspots["in_gene"].sum()   # successes
+n = len(hotspots)              # trials
+p = gene_fraction              # expected probability
+
+print("\n🔥 hotspots total:", n)
+print("🔥 hotspots in genes:", k)
+
+observed_fraction = k / n if n > 0 else 0
+print("📊 observed fraction:", round(observed_fraction,4))
+
+# =========================
+# BINOMIAL TEST (manual)
+# =========================
+def binomial_p_value(k, n, p):
+    # P(X >= k)
+    prob = 0
+    for i in range(k, n+1):
+        prob += comb(n,i) * (p**i) * ((1-p)**(n-i))
+    return prob
+
+p_value = binomial_p_value(k, n, p)
+
+print("\n📉 p-value:", p_value)
+
+# =========================
+# INTERPRETAÇÃO
+# =========================
+print("\n🧠 INTERPRETATION:")
+
+if p_value < 0.05:
+    print("✅ Significant enrichment in genes")
+elif p_value < 0.1:
+    print("⚠️ Weak enrichment (trend)")
+else:
+    print("❌ No enrichment detected")
+
+# =========================
+# SAVE RESULTS
+# =========================
+result = {
+    "hotspots_total": n,
+    "hotspots_in_genes": int(k),
+    "observed_fraction": observed_fraction,
+    "expected_fraction": p,
+    "p_value": p_value
+}
+
+pd.DataFrame([result]).to_csv("enrichment_results.csv", index=False)
+
+print("\n💾 saved: enrichment_results.csv")
+print("🚀 DONE")
+
+
+================================================================================
+ARQUIVO: metastablex_arabidopsis_fixed.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+echo "🌱 MetastableX Arabidopsis (FIXED + PAPER READY)"
+
+mkdir -p data plots
+
+# =========================
+# DOWNLOAD
+# =========================
+wget -q -O data/arabidopsis.fa.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/GCF_000001735.4_TAIR10.1_genomic.fna.gz
+wget -q -O data/arabidopsis.gff.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/GCF_000001735.4_TAIR10.1_genomic.gff.gz
+
+gunzip -f data/arabidopsis.fa.gz
+gunzip -f data/arabidopsis.gff.gz
+
+# =========================
+# PYTHON PIPELINE
+# =========================
+cat << 'PYEOF' > pipeline_fixed.py
+import numpy as np
+import pandas as pd
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+print("🌱 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+seq = load_fasta("data/arabidopsis.fa")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+
+smooth = gaussian_filter1d(signal, sigma=20)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=6)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# LOAD GFF (genes only)
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/arabidopsis.gff")
+
+print("🌱 genes:", len(genes))
+
+# =========================
+# MERGE INTERVALS (FIX CRITICAL BUG)
+# =========================
+genes_sorted = sorted(genes)
+merged = []
+
+for s,e in genes_sorted:
+    if not merged or s > merged[-1][1]:
+        merged.append([s,e])
+    else:
+        merged[-1][1] = max(merged[-1][1], e)
+
+gene_bases = sum(e - s for s,e in merged)
+gene_fraction = gene_bases / len(seq)
+
+print("📏 gene fraction:", round(gene_fraction,4))
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in merged)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = int(hot["in_gene"].sum())
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,4))
+print("📊 observed:", round(k/n,4))
+
+# =========================
+# BINOMIAL TEST (CORRECT)
+# =========================
+res = binomtest(k, n, p, alternative='greater')
+pval = res.pvalue
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+elif pval < 0.1:
+    print("⚠️ weak enrichment")
+else:
+    print("❌ no enrichment")
+
+# =========================
+# SAVE RESULTS
+# =========================
+df.to_csv("genomic_metastablex_fixed.csv", index=False)
+
+print("\n💾 saved: genomic_metastablex_fixed.csv")
+print("🚀 DONE")
+PYEOF
+
+# =========================
+# RUN
+# =========================
+python pipeline_fixed.py
+
+
+
+================================================================================
+ARQUIVO: metastablex_paper_pipeline.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+import argparse
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.ndimage import gaussian_filter1d
+from collections import Counter
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+
+def coding_score(seq):
+    start = ["ATG"]
+    stop = ["TAA","TAG","TGA"]
+    score = 0
+
+    for i in range(0, len(seq)-3, 3):
+        codon = seq[i:i+3]
+        if codon in start:
+            score += 2
+        if codon in stop:
+            score -= 1
+
+    return score / (len(seq)/3)
+
+
+# =========================
+# FEATURE EXTRACTION
+# =========================
+def extract_features(seq, window):
+    feats = []
+
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+
+        feats.append([
+            gc(w),
+            entropy(w),
+            complexity(w),
+            coding_score(w)
+        ])
+
+    return np.array(feats)
+
+
+# =========================
+# MULTISCALE
+# =========================
+def multiscale(seq, windows):
+
+    signals = []
+
+    for w in windows:
+        X = extract_features(seq, w)
+        X = StandardScaler().fit_transform(X)
+
+        s = PCA(n_components=1).fit_transform(X).flatten()
+
+        interp = np.interp(
+            np.linspace(0, len(s), num=3000),
+            np.arange(len(s)),
+            s
+        )
+
+        signals.append(interp)
+
+    return np.mean(signals, axis=0)
+
+
+# =========================
+# GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            parts = line.strip().split("\t")
+            if len(parts) >= 5:
+                genes.append((int(parts[3]), int(parts[4])))
+    return genes
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+
+    os.makedirs("plots", exist_ok=True)
+
+    print("🧬 loading...")
+    seq = load_fasta(args.fasta)
+
+    print("🔥 multiscale...")
+    signal = multiscale(seq, [500,1500,3000,6000])
+
+    # 🔥 smoothing pesado (ESSENCIAL)
+    smooth = gaussian_filter1d(signal, sigma=40)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    # =========================
+    # CLUSTER
+    # =========================
+    km = KMeans(n_clusters=3, random_state=42)
+    domain = km.fit_predict(smooth.reshape(-1,1))
+
+    # =========================
+    # RISK
+    # =========================
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=8)
+    risk = risk / np.max(risk)
+
+    # =========================
+    # HOTSPOTS (🔥 novo)
+    # =========================
+    threshold = np.percentile(risk, 95)
+    hotspots = (risk > threshold).astype(int)
+
+    # =========================
+    # POSITIONS
+    # =========================
+    win = int(len(seq)/len(smooth))
+    pos = np.arange(len(smooth)) * win
+
+    df = pd.DataFrame({
+        "pos": pos,
+        "structure": smooth,
+        "risk": risk,
+        "domain": domain,
+        "hotspot": hotspots
+    })
+
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    # =========================
+    # BED EXPORT
+    # =========================
+    with open("genomic_hotspots.bed","w") as f:
+        for i,row in df.iterrows():
+            if row.hotspot == 1:
+                f.write(f"chr1\t{int(row.pos)}\t{int(row.pos+win)}\tHOTSPOT\n")
+
+    # =========================
+    # PCA (fix real)
+    # =========================
+    X = extract_features(seq, 3000)
+    X = StandardScaler().fit_transform(X)
+    P = PCA(n_components=2).fit_transform(X)
+
+    # =========================
+    # PLOTS
+    # =========================
+    x = df["pos"]
+
+    # PCA correto
+    plt.figure(figsize=(6,6))
+    plt.scatter(P[:,0], P[:,1], c=P[:,0], s=5)
+    plt.gca().set_aspect('equal')
+    plt.title("Genomic Structural Manifold")
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    # PAPER
+    fig, axs = plt.subplots(3,1, figsize=(10,8), sharex=True)
+
+    axs[0].scatter(P[:,0], P[:,1], c=P[:,0], s=5)
+    axs[0].set_title("A) Structural Manifold")
+    axs[0].set_aspect('equal')
+
+    axs[1].plot(x, smooth)
+    axs[1].set_title("B) Structural Axis")
+
+    axs[2].plot(x, risk)
+    axs[2].scatter(x[hotspots==1], risk[hotspots==1], s=5)
+    axs[2].set_title("C) Metastable Risk + Hotspots")
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+
+    # =========================
+    # GFF VALIDATION
+    # =========================
+    if args.gff:
+        print("🧬 validating...")
+
+        genes = load_gff(args.gff)
+
+        gene_risk = []
+        background_risk = []
+
+        for _, row in df.iterrows():
+            in_gene = False
+
+            for g_start, g_end in genes:
+                if g_start <= row.pos <= g_end:
+                    in_gene = True
+                    break
+
+            if in_gene:
+                gene_risk.append(row.risk)
+            else:
+                background_risk.append(row.risk)
+
+        print("🔥 mean gene risk:", np.mean(gene_risk))
+        print("🔥 mean background risk:", np.mean(background_risk))
+
+    print("🚀 DONE")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--gff", default=None)
+
+    args = parser.parse_args()
+    main(args)
+
+
+================================================================================
+ARQUIVO: metastablex_final_analysis.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+echo "🔥 MetastableX FINAL (shuffle + nature figure)"
+
+mkdir -p plots
+
+cat << 'PYEOF' > final_analysis.py
+import numpy as np
+import pandas as pd
+from collections import Counter
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path, max_len=8_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+
+# =========================
+# PIPELINE CORE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    X = StandardScaler().fit_transform(X)
+
+    signal = PCA(n_components=1).fit_transform(X).flatten()
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return smooth, risk
+
+
+# =========================
+# LOAD REAL
+# =========================
+print("🧬 loading real genome...")
+seq = load_fasta("data/arabidopsis.fa")
+
+real_s, real_r = run_pipeline(seq)
+
+# =========================
+# SHUFFLE CONTROL
+# =========================
+print("🎲 generating shuffle control...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuffled = "".join(seq_list)
+
+shuf_s, shuf_r = run_pipeline(seq_shuffled)
+
+# =========================
+# PCA (real only)
+# =========================
+X = extract(seq, 1500)
+X = StandardScaler().fit_transform(X)
+P = PCA(n_components=2).fit_transform(X)
+
+# =========================
+# FIGURA FINAL (NATURE STYLE)
+# =========================
+fig = plt.figure(figsize=(12,10))
+
+# A — MANIFOLD
+ax1 = plt.subplot(4,1,1)
+ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=4)
+ax1.set_title("A) Structural Manifold")
+ax1.set_aspect('equal')
+
+# B — STRUCTURE
+ax2 = plt.subplot(4,1,2)
+ax2.plot(real_s)
+ax2.set_title("B) Structural Axis (Real)")
+
+# C — RISK REAL vs SHUFFLE
+ax3 = plt.subplot(4,1,3)
+ax3.plot(real_r, label="Real")
+ax3.plot(shuf_r, alpha=0.6, label="Shuffled")
+ax3.legend()
+ax3.set_title("C) Metastable Risk Comparison")
+
+# D — DISTRIBUTION
+ax4 = plt.subplot(4,1,4)
+ax4.hist(real_r, bins=50, alpha=0.7, label="Real")
+ax4.hist(shuf_r, bins=50, alpha=0.5, label="Shuffled")
+ax4.legend()
+ax4.set_title("D) Risk Distribution")
+
+plt.tight_layout()
+plt.savefig("plots/nature_figure.png", dpi=300)
+
+# =========================
+# STATISTICS
+# =========================
+print("\n📊 COMPARISON")
+
+print("Real mean risk:", np.mean(real_r))
+print("Shuffle mean risk:", np.mean(shuf_r))
+
+print("Real std:", np.std(real_r))
+print("Shuffle std:", np.std(shuf_r))
+
+# simple effect size
+effect = np.mean(real_r) - np.mean(shuf_r)
+print("\n🔥 effect size:", effect)
+
+if effect > 0:
+    print("✅ real genome shows stronger structure than random")
+else:
+    print("⚠️ no clear difference")
+
+print("\n📊 saved: plots/nature_figure.png")
+print("🚀 DONE")
+PYEOF
+
+python final_analysis.py
+
+
+
+================================================================================
+ARQUIVO: metastablex_auto_pipeline.sh
+================================================================================
+
+#!/usr/bin/env bash
+set -e
+
+echo "🚀 MetastableX Auto Pipeline"
+
+# =========================
+# CONFIG
+# =========================
+GENOME_URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/003/713/225/GCF_003713225.1_Canephora_v1.0/GCF_003713225.1_Canephora_v1.0_genomic.fna.gz"
+GFF_URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/003/713/225/GCF_003713225.1_Canephora_v1.0/GCF_003713225.1_Canephora_v1.0_genomic.gff.gz"
+
+mkdir -p data plots
+
+# =========================
+# DOWNLOAD
+# =========================
+echo "⬇️ downloading genome..."
+wget -q -O data/genome.fna.gz $GENOME_URL
+
+echo "⬇️ downloading GFF..."
+wget -q -O data/genes.gff.gz $GFF_URL
+
+# =========================
+# EXTRACT
+# =========================
+echo "📦 extracting..."
+gunzip -f data/genome.fna.gz
+gunzip -f data/genes.gff.gz
+
+# =========================
+# PYTHON PIPELINE
+# =========================
+cat << 'PYEOF' > metastablex_pipeline.py
+import numpy as np
+import pandas as pd
+import os
+from collections import Counter
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.ndimage import gaussian_filter1d
+
+
+# =========================
+# FASTA (single chromosome)
+# =========================
+def load_fasta(path, max_len=5_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def coding_score(seq):
+    start = ["ATG"]
+    stop = ["TAA","TAG","TGA"]
+    score = 0
+
+    for i in range(0, len(seq)-3, 3):
+        codon = seq[i:i+3]
+        if codon in start:
+            score += 2
+        if codon in stop:
+            score -= 1
+
+    return score / (len(seq)/3 + 1e-9)
+
+
+# =========================
+# FEATURES EXTRACTION
+# =========================
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w), coding_score(w)])
+    return np.array(feats)
+
+
+# =========================
+# MULTISCALE
+# =========================
+def multiscale(seq):
+    signals = []
+
+    for w in [500,1500,3000,6000]:
+        X = extract(seq, w)
+        X = StandardScaler().fit_transform(X)
+        s = PCA(n_components=1).fit_transform(X).flatten()
+
+        interp = np.interp(
+            np.linspace(0, len(s), 3000),
+            np.arange(len(s)),
+            s
+        )
+
+        signals.append(interp)
+
+    return np.mean(signals, axis=0)
+
+
+# =========================
+# GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4:
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+
+# =========================
+# RUN
+# =========================
+print("🧬 loading sequence...")
+seq = load_fasta("data/genome.fna")
+
+print("🔥 computing multiscale...")
+signal = multiscale(seq)
+
+smooth = gaussian_filter1d(signal, sigma=40)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=8)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "structure": smooth,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+df.to_csv("genomic_metastablex.csv", index=False)
+
+# =========================
+# BED
+# =========================
+with open("genomic_hotspots.bed","w") as f:
+    for i,row in df.iterrows():
+        if row.hotspot == 1:
+            f.write(f"chr1\t{int(row.pos)}\t{int(row.pos+win)}\tHOTSPOT\n")
+
+# =========================
+# PCA
+# =========================
+X = extract(seq, 3000)
+X = StandardScaler().fit_transform(X)
+P = PCA(n_components=2).fit_transform(X)
+
+plt.figure(figsize=(6,6))
+plt.scatter(P[:,0], P[:,1], c=P[:,0], s=5)
+plt.gca().set_aspect('equal')
+plt.title("Genomic Structural Manifold")
+plt.savefig("plots/pca.png", dpi=300)
+plt.close()
+
+# =========================
+# PAPER FIG
+# =========================
+x = df["pos"]
+
+fig, axs = plt.subplots(3,1, figsize=(10,8), sharex=True)
+
+axs[0].scatter(P[:,0], P[:,1], c=P[:,0], s=5)
+axs[0].set_title("A) Structural Manifold")
+axs[0].set_aspect('equal')
+
+axs[1].plot(x, smooth)
+axs[1].set_title("B) Structural Axis")
+
+axs[2].plot(x, risk)
+axs[2].scatter(x[hotspots==1], risk[hotspots==1], s=5)
+axs[2].set_title("C) Metastable Risk + Hotspots")
+
+plt.tight_layout()
+plt.savefig("plots/paper.png", dpi=300)
+
+# =========================
+# VALIDATION
+# =========================
+if os.path.exists("data/genes.gff"):
+    print("🧬 validating...")
+
+    genes = load_gff("data/genes.gff")
+
+    gene_risk = []
+    bg_risk = []
+
+    for _, row in df.iterrows():
+        in_gene = any(s <= row.pos <= e for s,e in genes)
+
+        if in_gene:
+            gene_risk.append(row.risk)
+        else:
+            bg_risk.append(row.risk)
+
+    print("🔥 gene risk:", np.mean(gene_risk))
+    print("🔥 background:", np.mean(bg_risk))
+
+print("✅ DONE")
+PYEOF
+
+# =========================
+# RUN
+# =========================
+echo "⚙️ running pipeline..."
+python metastablex_pipeline.py
+
+echo "📊 outputs:"
+echo "- plots/pca.png"
+echo "- plots/paper.png"
+echo "- genomic_metastablex.csv"
+echo "- genomic_hotspots.bed"
+
+
+
+================================================================================
+ARQUIVO: plot_nature_final.py
+================================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def plot_nature(P, real_s, real_r, shuf_r):
+
+    plt.figure(figsize=(10,10))
+
+    # =========================
+    # A — PCA (MAIOR)
+    # =========================
+    ax1 = plt.subplot2grid((4,1),(0,0), rowspan=1)
+    sc = ax1.scatter(P[:,0], P[:,1], c=P[:,0], s=6)
+    ax1.set_title("A) Structural Manifold", fontweight="bold")
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+
+    cbar = plt.colorbar(sc, ax=ax1)
+    cbar.set_label("PC1")
+
+    # =========================
+    # B — STRUCTURE
+    # =========================
+    ax2 = plt.subplot2grid((4,1),(1,0))
+    ax2.plot(real_s, linewidth=1)
+    ax2.set_title("B) Structural Axis", fontweight="bold")
+    ax2.set_ylabel("Normalized")
+
+    # =========================
+    # C — RISK
+    # =========================
+    ax3 = plt.subplot2grid((4,1),(2,0))
+    ax3.plot(real_r, label="Real", linewidth=1.2)
+    ax3.plot(shuf_r, label="Shuffled", alpha=0.6)
+    ax3.legend(frameon=False)
+    ax3.set_title("C) Metastable Risk", fontweight="bold")
+
+    # =========================
+    # D — DISTRIBUTION (KDE 🔥)
+    # =========================
+    ax4 = plt.subplot2grid((4,1),(3,0))
+    sns.kdeplot(real_r, label="Real", fill=True, alpha=0.4)
+    sns.kdeplot(shuf_r, label="Shuffled", fill=True, alpha=0.3)
+    ax4.legend(frameon=False)
+    ax4.set_title("D) Risk Distribution", fontweight="bold")
+
+    plt.tight_layout()
+
+    plt.savefig("plots/figure_nature_final.png", dpi=300)
+    plt.savefig("plots/figure_nature_final.pdf")
+
+    print("🔥 figure saved: plots/figure_nature_final")
+
+
+
+================================================================================
+ARQUIVO: genomic_metastablex_multiscale.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+import argparse
+import os
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from scipy.ndimage import gaussian_filter1d
+from collections import Counter
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+
+def extract_features(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([
+            gc(w),
+            entropy(w),
+            len(set(w))/len(w)
+        ])
+    return np.array(feats)
+
+
+# =========================
+# MULTI-SCALE PCA
+# =========================
+def multiscale_signal(seq, windows):
+
+    signals = []
+
+    for w in windows:
+        X = extract_features(seq, w)
+        X = StandardScaler().fit_transform(X)
+
+        pca = PCA(n_components=1)
+        s = pca.fit_transform(X).flatten()
+
+        # interpolar para tamanho máximo
+        s_interp = np.interp(
+            np.linspace(0, len(s), num=2000),
+            np.arange(len(s)),
+            s
+        )
+
+        signals.append(s_interp)
+
+    return np.mean(signals, axis=0)
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+
+    os.makedirs("plots", exist_ok=True)
+
+    seq = load_fasta(args.fasta)
+
+    print("🧬 multiscale...")
+
+    signal = multiscale_signal(seq, [500,1500,3000,6000])
+
+    # 🔥 smoothing pesado (agora faz sentido)
+    smooth = gaussian_filter1d(signal, sigma=20)
+
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    # 🔥 domínios reais
+    km = KMeans(n_clusters=3, random_state=42)
+    domain = km.fit_predict(smooth.reshape(-1,1))
+
+    # 🔥 risco real
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    # =========================
+    # PCA VISUAL
+    # =========================
+    X = extract_features(seq, 3000)
+    X = StandardScaler().fit_transform(X)
+    P = PCA(n_components=2).fit_transform(X)
+
+    # =========================
+    # PLOTS
+    # =========================
+    x = np.arange(len(smooth))
+
+    plt.figure(figsize=(6,6))
+    plt.scatter(P[:,0], P[:,1], s=5)
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.savefig("plots/pca.png", dpi=300)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x, smooth)
+    plt.title("Structural Axis (multiscale)")
+    plt.savefig("plots/structure.png", dpi=300)
+    plt.close()
+
+    plt.figure()
+    plt.plot(x, risk)
+    plt.title("Metastable Risk")
+    plt.savefig("plots/risk.png", dpi=300)
+    plt.close()
+
+    fig, axs = plt.subplots(3,1, figsize=(8,8), sharex=True)
+
+    axs[0].scatter(P[:,0], P[:,1], s=5)
+    axs[0].set_title("A) Structural Manifold")
+    axs[0].set_aspect('equal')
+
+    axs[1].plot(x, smooth)
+    axs[1].set_title("B) Structural Axis")
+
+    axs[2].plot(x, risk)
+    axs[2].set_title("C) Metastable Risk")
+
+    plt.tight_layout()
+    plt.savefig("plots/paper.png", dpi=300)
+
+    print("🔥 MULTISCALE DONE")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    args = parser.parse_args()
+
+    main(args)
+
+
+
+================================================================================
+ARQUIVO: ecoli_pipeline.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+from collections import Counter
+import os
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from math import comb
+
+print("🧬 loading sequence...")
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+seq = load_fasta("data/ecoli.fna")
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# STRUCTURE
+# =========================
+X = extract(seq, 1000)
+X = StandardScaler().fit_transform(X)
+
+signal = PCA(n_components=1).fit_transform(X).flatten()
+smooth = gaussian_filter1d(signal, sigma=10)
+smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+risk = np.abs(np.gradient(smooth))
+risk = gaussian_filter1d(risk, sigma=3)
+risk = risk / np.max(risk)
+
+threshold = np.percentile(risk, 95)
+hotspots = (risk > threshold).astype(int)
+
+win = int(len(seq)/len(smooth))
+pos = np.arange(len(smooth)) * win
+
+df = pd.DataFrame({
+    "pos": pos,
+    "risk": risk,
+    "hotspot": hotspots
+})
+
+# =========================
+# LOAD GFF
+# =========================
+def load_gff(path):
+    genes = []
+    with open(path) as f:
+        for line in f:
+            if line.startswith("#"):
+                continue
+            p = line.split("\t")
+            if len(p) > 4 and p[2] == "gene":
+                genes.append((int(p[3]), int(p[4])))
+    return genes
+
+genes = load_gff("data/ecoli.gff")
+
+print("🧬 genes:", len(genes))
+
+# =========================
+# GENE COVERAGE
+# =========================
+genome_size = df["pos"].max()
+
+gene_bases = sum(e - s for s,e in genes)
+gene_fraction = gene_bases / genome_size
+
+# =========================
+# OVERLAP
+# =========================
+def in_gene(pos):
+    return any(s <= pos <= e for s,e in genes)
+
+df["in_gene"] = df["pos"].apply(in_gene)
+
+hot = df[df.hotspot == 1]
+
+k = hot["in_gene"].sum()
+n = len(hot)
+p = gene_fraction
+
+print("\n🔥 hotspots:", n)
+print("🔥 in genes:", k)
+print("📊 expected:", round(p,3))
+print("📊 observed:", round(k/n,3))
+
+# =========================
+# BINOMIAL
+# =========================
+def binom(k,n,p):
+    prob = 0
+    for i in range(k,n+1):
+        prob += comb(n,i)*(p**i)*((1-p)**(n-i))
+    return prob
+
+pval = binom(k,n,p)
+
+print("\n📉 p-value:", pval)
+
+if pval < 0.05:
+    print("✅ enrichment detected")
+else:
+    print("❌ no enrichment")
+
+print("\n🚀 DONE")
+
 
 ================================================================================
 ARQUIVO: metastablex/train_pipeline.py
@@ -2879,6 +6798,256 @@ with imageio.get_writer(OUT, fps=FPS, codec='libx264') as writer:
             print(f"{step}/{FRAMES}")
 
 print("Vídeo final:", OUT)
+
+
+================================================================================
+ARQUIVO: metastablex/genomic_metastablex_pipeline.py
+================================================================================
+
+import argparse
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+from collections import Counter
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+
+# MetastableX
+from metastablex.metastablex.qwan.runner import run_qwan
+
+
+# =========================
+# FASTA
+# =========================
+def load_fasta(path):
+    seq = ""
+    with open(path, "r") as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+    return seq
+
+
+# =========================
+# FEATURES
+# =========================
+def gc_content(seq):
+    return (seq.count("G") + seq.count("C")) / len(seq)
+
+
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v / len(seq) for v in counts.values()]
+    return -sum(p * np.log2(p + 1e-9) for p in probs)
+
+
+def complexity(seq):
+    return len(set(seq)) / len(seq)
+
+
+def kmer_freq(seq, k=3):
+    kmers = [seq[i:i+k] for i in range(len(seq)-k+1)]
+    counts = Counter(kmers)
+    total = sum(counts.values())
+    return {k: v / total for k, v in counts.items()}
+
+
+# =========================
+# DATASET
+# =========================
+def build_dataset(sequence, window, kmer_size=3):
+    data = []
+
+    for i in range(0, len(sequence) - window, window):
+        w = sequence[i:i+window]
+
+        features = {
+            "start": i,
+            "end": i + window,
+            "gc": gc_content(w),
+            "entropy": entropy(w),
+            "complexity": complexity(w),
+        }
+
+        kmers = kmer_freq(w, kmer_size)
+        features.update(kmers)
+
+        data.append(features)
+
+    return pd.DataFrame(data).fillna(0)
+
+
+# =========================
+# METASTABLEX
+# =========================
+def run_metastablex_series(X):
+    risks = []
+    regimes = []
+
+    for i in range(len(X)):
+        window = X[max(0, i-5):i+5]
+
+        if len(window) < 5:
+            risks.append(0)
+            regimes.append("unknown")
+            continue
+
+        series = window[:, 0]
+
+        try:
+            res = run_qwan(series)
+            risks.append(res.get("risk", 0))
+            regimes.append(res.get("regime", "unknown"))
+        except:
+            risks.append(0)
+            regimes.append("fail")
+
+    return risks, regimes
+
+
+# =========================
+# PLOTS (PAPER LEVEL)
+# =========================
+def make_plots(df):
+    os.makedirs("plots", exist_ok=True)
+
+    plt.rcParams.update({
+        "font.size": 10,
+        "figure.figsize": (10, 4),
+        "axes.spines.top": False,
+        "axes.spines.right": False
+    })
+
+    x = np.arange(len(df))
+
+    # =========================
+    # PCA
+    # =========================
+    plt.figure()
+    plt.scatter(df["pca1"], df["pca2"], c=df["cluster"], s=10)
+    plt.xlabel("PC1")
+    plt.ylabel("PC2")
+    plt.title("Genomic Structural Manifold (PCA)")
+    plt.tight_layout()
+    plt.savefig("plots/pca_clusters.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # CLUSTERS + INSTABILITY
+    # =========================
+    plt.figure()
+    plt.plot(x, df["cluster_smooth"], linewidth=1, label="Cluster (smoothed)")
+    plt.plot(x, df["instability"], linewidth=1, linestyle="--", label="Instability")
+    plt.xlabel("Genomic position (windows)")
+    plt.ylabel("State")
+    plt.title("Structural Regimes and Instability")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("plots/structure_instability.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # METASTABLE RISK
+    # =========================
+    plt.figure()
+    plt.plot(x, df["meta_risk"], linewidth=1.5)
+    plt.xlabel("Genomic position (windows)")
+    plt.ylabel("Risk")
+    plt.title("Metastable Risk Profile")
+    plt.tight_layout()
+    plt.savefig("plots/metastable_risk.png", dpi=300)
+    plt.close()
+
+    # =========================
+    # FINAL COMBINED (FIGURA DE PAPER)
+    # =========================
+    fig, axs = plt.subplots(3, 1, sharex=True, figsize=(10, 8))
+
+    axs[0].scatter(df["pca1"], df["pca2"], c=df["cluster"], s=5)
+    axs[0].set_title("A) PCA Structural Space")
+
+    axs[1].plot(x, df["cluster_smooth"], label="Cluster")
+    axs[1].plot(x, df["instability"], linestyle="--", label="Instability")
+    axs[1].set_title("B) Structural Regimes")
+    axs[1].legend()
+
+    axs[2].plot(x, df["meta_risk"])
+    axs[2].set_title("C) Metastable Risk")
+
+    axs[2].set_xlabel("Genomic Position")
+
+    plt.tight_layout()
+    plt.savefig("plots/figure_paper.png", dpi=300)
+    plt.close()
+
+
+# =========================
+# MAIN
+# =========================
+def main(args):
+    print("🧬 Loading FASTA...")
+    seq = load_fasta(args.fasta)
+
+    print("🔬 Building dataset...")
+    df = build_dataset(seq, args.window)
+
+    features = [c for c in df.columns if c not in ["start", "end"]]
+    X = df[features].values
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    print("🤖 Clustering...")
+    kmeans = KMeans(n_clusters=args.k, random_state=42)
+    df["cluster"] = kmeans.fit_predict(X_scaled)
+
+    df["cluster_smooth"] = gaussian_filter1d(df["cluster"], sigma=2)
+
+    print("📉 PCA...")
+    pca = PCA(n_components=2)
+    X_pca = pca.fit_transform(X_scaled)
+
+    df["pca1"] = X_pca[:, 0]
+    df["pca2"] = X_pca[:, 1]
+
+    print("⚡ Instability...")
+    transitions = np.abs(np.diff(df["cluster_smooth"]))
+    df["instability"] = np.concatenate([[0], transitions])
+
+    print("🔥 MetastableX...")
+    risks, regimes = run_metastablex_series(X_pca)
+
+    df["meta_risk"] = risks
+    df["meta_regime"] = regimes
+
+    print("💾 Saving...")
+    df.to_csv("genomic_metastablex.csv", index=False)
+
+    with open("genomic_metastablex.bed", "w") as f:
+        for _, row in df.iterrows():
+            f.write(f"chr1\t{int(row.start)}\t{int(row.end)}\tcluster_{int(row.cluster)}\n")
+
+    print("📊 Plotting...")
+    make_plots(df)
+
+    print("✅ DONE")
+
+
+# =========================
+# CLI
+# =========================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--fasta", required=True)
+    parser.add_argument("--window", type=int, default=2000)
+    parser.add_argument("--k", type=int, default=3)
+
+    args = parser.parse_args()
+    main(args)
+
 
 
 ================================================================================
