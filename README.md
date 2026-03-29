@@ -1,4 +1,3 @@
-```markdown
 # 🧬 MetastableX — Structural Genomics as a Metastable System
 
 A systems-level pipeline for analyzing genomic sequences as continuous structural trajectories, integrating sequence-derived features, dynamical systems modeling, and epigenetic data.
@@ -429,5 +428,3 @@ The key conclusion:
 
 > the genome is not just a collection of genes, but a structured dynamical system operating under metastable constraints.
 
-```
-```
