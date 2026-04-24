@@ -264,6 +264,697 @@ df.to_csv("genomic_analysis.csv", index=False)
 print("\n✅ Pipeline completo finalizado!")
 
 ================================================================================
+ARQUIVO: metastablex_gene_pipeline.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+# =========================
+# CONFIG
+# =========================
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# ARGUMENTS
+# =========================
+parser = argparse.ArgumentParser(description="MetastableX Gene Pipeline")
+
+parser.add_argument("--gene", type=str, required=True, help="Gene symbol (e.g., HBB)")
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)  # region around gene
+
+args = parser.parse_args()
+
+# =========================
+# FETCH GENE (ENSEMBL)
+# =========================
+def fetch_gene_coordinates(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    r = requests.get(url)
+    data = r.json()
+
+    return {
+        "chr": data["seq_region_name"],
+        "start": data["start"],
+        "end": data["end"]
+    }
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+    
+    if not os.path.exists("data/human.fa.gz"):
+        print("⬇ downloading genome...")
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# LOAD CHROMOSOME REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+
+    region_start = start - flank
+    region_end = end + flank
+
+    pos = 0
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if region_start <= pos <= region_end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window):
+
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return smooth, risk
+
+# =========================
+# MAIN
+# =========================
+print(f"🧬 fetching gene: {args.gene}")
+gene_info = fetch_gene_coordinates(args.gene)
+
+print("📍 gene:", gene_info)
+
+download_genome()
+
+print("📥 loading region...")
+seq = load_region("data/human.fa", gene_info["chr"], gene_info["start"], gene_info["end"], args.flank)
+
+print("⚙ running analysis...")
+struct, risk = run_pipeline(seq, args.window)
+
+# =========================
+# HOTSPOTS
+# =========================
+threshold = 0.85
+hotspots = np.where(risk > threshold)[0]
+
+# gene windows
+gene_start_w = args.flank // args.window
+gene_end_w = gene_start_w + ((gene_info["end"] - gene_info["start"]) // args.window)
+
+gene_windows = set(range(gene_start_w, gene_end_w))
+
+overlap = len(set(hotspots) & gene_windows)
+
+n = len(hotspots)
+p = len(gene_windows)/len(risk)
+
+print("🔥 hotspots:", n)
+print("🧬 overlap:", overlap)
+
+# =========================
+# STATS
+# =========================
+if p > 0 and p < 1 and n > 0:
+    res = binomtest(overlap, n, p, alternative='greater')
+    print("📉 p-value:", res.pvalue)
+
+# =========================
+# PLOTS
+# =========================
+plt.figure(figsize=(12,4))
+plt.plot(risk, label="Metastable Risk")
+
+# highlight gene
+plt.axvspan(gene_start_w, gene_end_w, alpha=0.3, label="Gene")
+
+plt.legend()
+plt.title(f"{args.gene} region")
+plt.savefig(f"plots/{args.gene}_analysis.png", dpi=300)
+plt.close()
+
+print("🚀 DONE")
+
+
+
+================================================================================
+ARQUIVO: metastablex_final_pipeline.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# ARGS
+# =========================
+parser = argparse.ArgumentParser()
+parser.add_argument("--gene", required=True)
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+args = parser.parse_args()
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+
+    if not os.path.exists("data/human.fa.gz"):
+        print("⬇ downloading genome...")
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# DOWNLOAD DNASE
+# =========================
+def download_dnase():
+    url = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz"
+
+    gz = "data/dnase_ucsc.gz"
+    txt = "data/dnase_ucsc.txt"
+
+    if not os.path.exists(gz):
+        print("⬇ downloading DNase...")
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(gz, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+
+    if not os.path.exists(txt):
+        print("📦 extracting DNase...")
+        with gzip.open(gz, "rb") as f_in:
+            with open(txt, "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# FETCH GENE
+# =========================
+def fetch_gene(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    return requests.get(url).json()
+
+# =========================
+# LOAD REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+    pos = 0
+
+    start -= flank
+    end += flank
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if start <= pos <= end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# METASTABLEX
+# =========================
+def run_pipeline(seq, window):
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return risk
+
+# =========================
+# LOAD DNASE (CORRIGIDO)
+# =========================
+def load_dnase(path, chrom, start, end):
+    regions = []
+
+    with open(path) as f:
+        for line in f:
+            parts = line.strip().split()
+
+            if len(parts) < 4:
+                continue
+
+            chr_name = parts[1]
+
+            if chr_name == f"chr{chrom}" or chr_name == chrom:
+                try:
+                    s = int(parts[2])
+                    e = int(parts[3])
+                except:
+                    continue
+
+                if s < end and e > start:
+                    regions.append((s, e))
+
+    return regions
+
+# =========================
+# MAIN
+# =========================
+print("🧬 fetching gene...")
+gene = fetch_gene(args.gene)
+
+chrom = gene["seq_region_name"]
+start = gene["start"]
+end = gene["end"]
+
+download_genome()
+download_dnase()
+
+print("📥 loading region...")
+seq = load_region("data/human.fa", chrom, start, end, args.flank)
+
+print("⚙ running MetastableX...")
+risk = run_pipeline(seq, args.window)
+
+# hotspots
+threshold = 0.85
+hotspots = np.where(risk > threshold)[0]
+
+# gene region
+gene_start_w = args.flank // args.window
+gene_end_w = gene_start_w + ((end - start)//args.window)
+
+# DNase
+dnase_regions = load_dnase(
+    "data/dnase_ucsc.txt",
+    chrom,
+    start - args.flank,
+    end + args.flank
+)
+
+dnase_windows = set()
+offset = (start - args.flank)//args.window
+
+for s, e in dnase_regions:
+    for w in range(s//args.window, e//args.window):
+        dnase_windows.add(w - offset)
+
+# overlap
+overlap = len(set(hotspots) & dnase_windows)
+
+n = len(hotspots)
+p = len(dnase_windows)/len(risk)
+
+print("🔥 hotspots:", n)
+print("🧬 DNase overlap:", overlap)
+
+if p > 0 and p < 1 and n > 0:
+    res = binomtest(overlap, n, p, alternative='greater')
+    print("📉 p-value:", res.pvalue)
+
+# =========================
+# FIGURA FINAL
+# =========================
+plt.figure(figsize=(14,5))
+
+plt.plot(risk, label="Metastable Risk", linewidth=1.5)
+
+for w in dnase_windows:
+    plt.axvspan(w, w+1, alpha=0.05, color='red')
+
+plt.axvspan(gene_start_w, gene_end_w, alpha=0.3, color='green', label="Gene")
+
+plt.legend()
+plt.title(f"{args.gene} — Metastable Risk vs DNase")
+plt.xlabel("Genomic Windows")
+plt.ylabel("Normalized Risk")
+
+plt.savefig("plots/final_encode_figure.png", dpi=300)
+plt.close()
+
+print("🚀 DONE — plots/final_encode_figure.png")
+
+
+
+================================================================================
+ARQUIVO: metastablex_multigene_pipeline.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+# =========================
+# SETUP
+# =========================
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+os.makedirs("results", exist_ok=True)
+
+# =========================
+# ARGUMENTS
+# =========================
+parser = argparse.ArgumentParser(description="MetastableX Multi-Gene Pipeline")
+
+parser.add_argument("--genes", type=str, required=True, help="Comma-separated genes (e.g., HBB,TP53,BRCA1)")
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+
+args = parser.parse_args()
+
+gene_list = [g.strip() for g in args.genes.split(",")]
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+    
+    if not os.path.exists("data/human.fa.gz"):
+        print("⬇ downloading genome...")
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# ENSEMBL
+# =========================
+def fetch_gene(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    r = requests.get(url)
+    if r.status_code != 200:
+        return None
+    return r.json()
+
+# =========================
+# LOAD REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+    pos = 0
+
+    start -= flank
+    end += flank
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if start <= pos <= end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window):
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return risk
+
+# =========================
+# MAIN
+# =========================
+download_genome()
+
+results = []
+
+for gene in gene_list:
+
+    print(f"\n🧬 Processing {gene}...")
+
+    info = fetch_gene(gene)
+    if not info:
+        print("❌ gene not found")
+        continue
+
+    chrom = info["seq_region_name"]
+    start = info["start"]
+    end = info["end"]
+
+    seq = load_region("data/human.fa", chrom, start, end, args.flank)
+
+    if len(seq) < args.window * 10:
+        print("⚠ region too small")
+        continue
+
+    risk = run_pipeline(seq, args.window)
+
+    # hotspots
+    threshold = 0.85
+    hotspots = np.where(risk > threshold)[0]
+
+    # gene region
+    gene_start_w = args.flank // args.window
+    gene_end_w = gene_start_w + ((end - start)//args.window)
+
+    gene_windows = set(range(gene_start_w, gene_end_w))
+
+    overlap = len(set(hotspots) & gene_windows)
+
+    n = len(hotspots)
+    p = len(gene_windows)/len(risk)
+
+    pval = 1.0
+    if p > 0 and p < 1 and n > 0:
+        pval = binomtest(overlap, n, p, alternative='greater').pvalue
+
+    # intergenic = everything else
+    intergenic_windows = set(range(len(risk))) - gene_windows
+    intergenic_overlap = len(set(hotspots) & intergenic_windows)
+
+    results.append({
+        "gene": gene,
+        "hotspots": n,
+        "overlap_gene": overlap,
+        "overlap_intergenic": intergenic_overlap,
+        "p_value": pval
+    })
+
+    # plot
+    plt.figure(figsize=(10,3))
+    plt.plot(risk)
+    plt.axvspan(gene_start_w, gene_end_w, alpha=0.3)
+    plt.title(gene)
+    plt.savefig(f"plots/{gene}.png", dpi=300)
+    plt.close()
+
+# =========================
+# SAVE RESULTS
+# =========================
+df = pd.DataFrame(results)
+df.to_csv("results/multigene_results.csv", index=False)
+
+print("\n📊 RESULTS:")
+print(df)
+
+print("\n🚀 DONE")
+
+
+================================================================================
+ARQUIVO: fix_dnase_ucsc.py
+================================================================================
+
+import requests
+import gzip
+import os
+
+os.makedirs("data", exist_ok=True)
+
+def download_dnase_ucsc():
+    url = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClusteredV3.txt.gz"
+
+    gz_path = "data/dnase_ucsc.gz"
+    txt_path = "data/dnase_ucsc.txt"
+
+    if not os.path.exists(gz_path):
+        print("⬇ downloading DNase (UCSC stable)...")
+
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(gz_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+    print("🔍 validating gzip...")
+    with gzip.open(gz_path, "rb") as f:
+        f.read(10)
+
+    if not os.path.exists(txt_path):
+        print("📦 extracting...")
+        with gzip.open(gz_path, "rb") as f_in:
+            with open(txt_path, "wb") as f_out:
+                f_out.write(f_in.read())
+
+    print("✅ DNase ready (clustered V3)")
+
+if __name__ == "__main__":
+    download_dnase_ucsc()
+
+
+================================================================================
 ARQUIVO: arabidopsis_pipeline.py
 ================================================================================
 
@@ -1139,177 +1830,470 @@ print("\n🚀 DONE")
 ARQUIVO: README.md
 ================================================================================
 
-# 🧬 Coffea canephora Genomic Structural Analysis
+# 🧬 MetastableX — Structural Genomics as a Metastable System
 
-![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
-![Status](https://img.shields.io/badge/status-research-orange)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Domain](https://img.shields.io/badge/domain-bioinformatics-purple)
+A systems-level platform for analyzing genomic sequences as continuous structural trajectories, integrating sequence-derived features, dynamical systems modeling, epigenetic data, and AI-driven interpretation.
 
 ---
 
-## 🧠 Overview
+## 📖 Overview
 
-This project explores the **structural organization of genomic sequences** using a hybrid feature-based approach combined with unsupervised learning and dynamical analysis.
+Traditional genomics focuses on discrete elements such as genes and regulatory regions.
 
-Instead of treating DNA as a static string, this pipeline models the genome as a **complex system**, revealing:
+MetastableX introduces a complementary perspective:
 
-- Structural regimes (clusters)
-- Continuous transitions between states
-- Instability patterns
-- Critical regions (hotspots)
-- Potential coding-like regions (heuristic)
+> The genome behaves as a **continuous structured system**, governed by constraints, transitions, and metastable dynamics.
+
+This platform models genomic sequences as trajectories in a feature space, enabling the detection of structural transitions and their relationship with epigenetic signals.
 
 ---
 
-## 🔬 Key Idea
+## 🧠 Core Idea
 
-The genome is modeled as a **metastable system**, where:
+Given a genomic sequence:
 
-- States correspond to structural regimes
-- Transitions reflect local structural changes
-- Instability identifies critical boundaries
+```
+S = {s₁, s₂, ..., sₙ}, where sᵢ ∈ {A, T, C, G}
+```
 
-This approach connects **bioinformatics with complex systems theory**.
+Segment into windows:
 
----
+```
+Sⱼ ⊂ S, |Sⱼ| = w
+```
 
-## ⚙️ Methodology
+Extract features:
 
-### 📊 Feature Extraction
+```
+GC(Sⱼ) = (n_G + n_C) / w
+H(Sⱼ) = -∑ pₖ log₂(pₖ + ε)
+C(Sⱼ) = |Σ(Sⱼ)| / w
+```
 
-Each genomic window is transformed into a feature vector using:
+Projection:
 
-- k-mer frequencies (k=3)
-- GC content
-- Shannon entropy
-- Sequence complexity (Lempel-Ziv inspired)
+```
+X' = (X - μ)W
+```
 
----
+Structural signal:
 
-### 🤖 Modeling
+```
+f(j) = PC1
+```
 
-- KMeans clustering → structural regimes
-- PCA → low-dimensional manifold
-- Gaussian smoothing → denoising
-- Instability metric → transition density
-- Random Forest → feature importance
+Metastable risk:
 
----
-
-### 🧬 Biological Heuristics
-
-Coding-like regions are inferred using:
-
-- GC content
-- Entropy
-- Complexity
+```
+R(j) = |df_s(j)/dj|
+```
 
 ---
 
-## 📈 Results Interpretation
+## 🔬 What This Platform Does
 
-The pipeline reveals:
-
-- A **low-dimensional manifold** governing genomic structure
-- **Three dominant structural regimes**
-- **Continuous transitions** between states
-- **Localized instability hotspots**
-- A **multifactorial organization** driven by composition and diversity
+- Retrieves genes automatically from Ensembl
+- Extracts genomic sequences (GRCh38)
+- Computes structural features (GC, entropy, complexity)
+- Projects features via PCA
+- Computes metastable risk
+- Detects hotspots
+- Integrates ENCODE DNase data
+- Performs enrichment analysis
+- Generates scientific plots
+- Stores results in PostgreSQL (JSONB)
+- Provides REST API (Django)
+- Provides interactive UI (React + Plotly)
+- Uses LLM (Llama) to interpret results
+- Generates scientific text automatically
 
 ---
 
-## 🚀 Installation
+## ⚙️ Installation
 
 ```bash
 git clone https://github.com/goldenluke/Coffea_canephora.git
 cd Coffea_canephora
-pip install -r requirements.txt
+
+pip install numpy matplotlib scipy scikit-learn requests django djangorestframework psycopg2-binary
 ```
 
-## ▶️ Usage
+---
 
-python genomic_full_pipeline.py --fasta your_sequence.fa --window 2000 --k 3
+## 🚀 CLI Usage
 
-## ⚙️ Parameters
+### Single gene
 
-Parameter	Description
---fasta	Input FASTA file
---window	Window size (recommended: 2000–3000)
---k	Number of clusters
---kmer	k-mer size (default: 3)
+```bash
+python metastablex_paper_pipeline.py --genes HBB
+```
 
-## 📊 Outputs
-## 📄 Files
-genomic_full_analysis.csv → full dataset
-genomic_regions.bed → genome browser file
+---
 
-## 📈 Visualizations
-PCA (structural manifold)
-Cluster distribution
-Instability profile
-Critical regions
-Coding score signal
+### Multiple genes
 
-## 🧠 Example Insights
-The genome is not homogeneous
-Structure emerges from multiple interacting features
-Instability highlights functional or structural boundaries
+```bash
+python metastablex_paper_pipeline.py \
+  --genes HBB TP53 BRCA1 MYC
+```
 
-## 🧬 BED File Usage
+---
 
-Open in:
+### Custom parameters
 
-IGV (Integrative Genomics Viewer)
-UCSC Genome Browser
-🔥 Feature Importance
+```bash
+python metastablex_paper_pipeline.py \
+  --genes TP53 \
+  --window 1500 \
+  --flank 300000
+```
 
-## Genomic structure is influenced by:
+---
 
-GC content
-Entropy
-Complexity
-Specific k-mer patterns
+## 🌐 Full Platform (Backend + Frontend)
 
-This confirms a multifactorial organization.
+### Start backend
+
+```bash
+cd metastablex_app/backend
+python manage.py runserver
+```
+
+---
+
+### Start frontend
+
+```bash
+cd metastablex_app/frontend
+npm start
+```
+
+---
+
+## 🔌 API Usage
+
+### Run analysis
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/run/ \
+-H "Content-Type: application/json" \
+-d '{"genes":["HBB","TP53"]}'
+```
+
+---
+
+### Get history
+
+```bash
+curl http://127.0.0.1:8000/api/analyses/
+```
+
+---
+
+### Generate paper section
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/paper/ \
+-H "Content-Type: application/json" \
+-d '{"genes":["TP53","BRCA1"]}'
+```
+
+---
+
+## 🧠 LLM Integration
+
+MetastableX integrates Llama (via Ollama):
+
+```bash
+ollama run llama3
+```
+
+Used for:
+
+- automatic interpretation
+- scientific explanation
+- paper generation
+
+---
+
+## 📊 Frontend Features
+
+The React dashboard provides:
+
+- Risk curves
+- Smoothed signals
+- Histograms
+- CDF plots
+- Boxplots
+- Heatmaps
+- Autocorrelation
+- Frequency spectrum (FFT)
+- PCA projection
+- Hotspot visualization
+- AI interpretation panel
+- Automatic paper generation
+
+---
+
+## 🧪 Example Output
+
+```
+TP53
+hotspots: 8
+overlap: 5
+p-value: 0.017
+SIGNIFICANT: True
+```
+
+---
+
+## 🧬 Epigenetic Integration
+
+DNase hypersensitivity clusters:
+
+- downloaded automatically from UCSC
+- mapped to genomic windows
+- compared against structural hotspots
+
+---
+
+## 📉 Statistical Test
+
+Binomial test:
+
+```
+H0: overlap is random
+H1: enrichment exists
+```
+
+---
+
+## 🔁 Null Model
+
+Randomized genome:
+
+- preserves composition
+- destroys structure
+
+Result:
+
+> real genomes show reduced instability
+
+---
+
+## 🧠 AI-Generated Science
+
+The platform can generate:
+
+- interpretation of results
+- structured explanations
+- full Results section of a paper
+
+---
+
+## 🧪 Advanced Usage
+
+### Large gene panel
+
+```bash
+python metastablex_paper_pipeline.py \
+  --genes TP53 BRCA1 BRCA2 EGFR MYC KRAS PTEN
+```
+
+---
+
+### High-resolution
+
+```bash
+--window 500
+```
+
+---
+
+### Large context
+
+```bash
+--flank 500000
+```
+
+---
+
+### Combined
+
+```bash
+python metastablex_paper_pipeline.py \
+  --genes TP53 BRCA1 MYC \
+  --window 800 \
+  --flank 300000
+```
+
+---
+
+## 📊 Example Outputs
+
+Below are real outputs generated by the platform, including structural metrics, AI interpretation, and automatic scientific text generation.
+
+---
+
+### 🧬 Multi-gene Analysis
+
+```
+HBB
+Hotspots: 87
+p-value: 0.322
+
+TP53
+Hotspots: 76
+p-value: 0.100
+
+BRCA1
+Hotspots: 81
+p-value: 0.316
+```
+
+---
+
+### 🧠 AI Interpretation (LLM)
+
+#### HBB
+
+```
+The structural behavior suggests a moderate level of metastable risk (mean ~0.65), indicating heterogeneous structural dynamics along the gene.
+
+The presence of 87 hotspots suggests localized transitions, but the p-value (0.32) indicates no statistically significant deviation from randomness.
+
+Biologically, HBB encodes the beta subunit of hemoglobin. The absence of enrichment suggests that structural transitions are not strongly aligned with functional regions in this locus.
+
+Limitations include reliance on aggregate metrics and lack of direct functional validation.
+```
+
+---
+
+#### TP53
+
+```
+The TP53 gene exhibits a moderate-to-high metastable risk profile (~0.60), with 76 hotspots indicating concentrated structural transitions.
+
+The p-value (~0.10) suggests a trend toward non-random organization, although not statistically significant.
+
+Given TP53’s role as a tumor suppressor, these patterns may reflect structural constraints associated with regulatory or functional regions.
+
+However, conclusions are limited by statistical power and feature simplicity.
+```
+
+---
+
+#### BRCA1
+
+```
+The BRCA1 gene shows a moderate structural risk (~0.64) with 81 hotspots distributed across the region.
+
+The p-value (~0.31) indicates no significant enrichment, suggesting that structural transitions are not strongly coupled to functional elements.
+
+BRCA1 is involved in DNA repair, and the presence of hotspots may reflect structurally sensitive regions.
+
+Further validation is required to assess biological relevance.
+```
+
+---
+
+## 📄 AI-Generated Results Section
+
+The platform can automatically generate a scientific Results section based on multi-gene analysis:
+
+```
+The analysis of hotspots and mean risk scores across multiple genes revealed distinct patterns and levels of variability.
+
+The gene HBB exhibited the highest number of hotspots (87) and a mean risk score of approximately 0.65, which was not statistically significant. In contrast, TP53 showed a moderate number of hotspots (76) and a slightly lower mean risk, with a p-value suggesting a trend toward non-random organization.
+
+BRCA1 displayed an intermediate level of hotspot density (81) and a comparable mean risk, but also failed to reach statistical significance. These results indicate that while structural transitions are present across all genes, their statistical relevance varies.
+
+The absence of strong statistical signals suggests that metastable dynamics are not universally aligned with functional regions, but may instead reflect intrinsic structural properties of genomic organization.
+
+These findings highlight the complexity of genome architecture and suggest that structural signals operate at a level distinct from classical gene annotation.
+```
+
+---
+
+## 📈 What These Outputs Show
+
+* Structural signals exist even without functional annotation
+* Not all genes exhibit enrichment
+* Metastable risk captures a different layer of genomic organization
+* AI can assist in interpreting complex outputs
+* Scientific text can be generated directly from data
+
+---
+
+## 🧠 Key Takeaway
+
+> MetastableX does not just analyze genomes — it interprets them and translates results into scientific narratives.
+
+---
+
+## 🧬 Project Evolution
+
+1. Coffee genome exploration (*Coffea canephora*)
+2. Structural modeling
+3. Metastable risk formulation
+4. Null validation
+5. Cross-species validation
+6. Human genome (HBB)
+7. ENCODE integration
+8. Multi-gene analysis
+9. Full-stack platform (Django + React)
+10. AI integration (Llama)
+11. Automatic scientific writing
+
+---
 
 ## ⚠️ Limitations
 
-Coding detection is heuristic (not ORF-based)
-KMeans imposes hard clustering
-No validation with real annotations yet
+- PCA is linear
+- window sensitivity
+- simplified features
+- DNase variability
+- limited biological validation
 
-## 🚀 Future Work
+---
 
-ORF detection (biological validation)
-Hidden Markov Models
-Multi-genome comparison
-Integration with GFF/GTF annotations
-Interactive visualization dashboard
+## 🔮 Future Work
 
-## 🧠 Conceptual Contribution
+- Hi-C / TAD integration
+- ATAC-seq validation
+- UMAP / deep embeddings
+- multi-scale wavelets
+- gene vs intergenic modeling
 
-This project proposes that:
+---
 
-Genomic organization can be described as a metastable system, where structural states emerge from the interaction of compositional and informational features.
+## 🧠 Scientific Position
 
-## 👨‍💻 Author
+MetastableX does not replace classical genomics.
 
-Lucas Dourado
+It introduces:
 
-Medicine student
-Computational modeling enthusiast
-Focus: complex systems, health data, and bioinformatics
+> a structural and dynamical perspective on genome organization
 
-## License
-MIT
+---
 
-Star the repository
-Share with others
-Contribute improvements
-📜 License
+## 👨‍🔬 Author
+
+Lucas Amaral Dourado
+
+---
+
+## 📜 License
 
 MIT License
+
+---
+
+## 🚀 Final Note
+
+This project evolved from exploratory analysis in coffee genomes to a full platform integrating structural genomics, epigenetics, and artificial intelligence.
+
+> The genome is not just a sequence — it is a dynamical system.
 
 
 ================================================================================
@@ -2017,6 +3001,259 @@ print("\n🚀 DONE")
 PYEOF
 
 python arabidopsis_pipeline.py
+
+
+
+================================================================================
+ARQUIVO: metastablex_demo_pipeline_v2.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+import warnings
+
+warnings.filterwarnings("ignore")
+
+# =========================
+# ARGS
+# =========================
+parser = argparse.ArgumentParser()
+parser.add_argument("--genes", nargs="+", required=True)
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+args = parser.parse_args()
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+
+    if not os.path.exists("data/human.fa.gz"):
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# DNASE
+# =========================
+def download_dnase():
+    url = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz"
+
+    if not os.path.exists("data/dnase_ucsc.gz"):
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open("data/dnase_ucsc.gz", "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+
+    if not os.path.exists("data/dnase_ucsc.txt"):
+        with gzip.open("data/dnase_ucsc.gz", "rb") as f_in:
+            with open("data/dnase_ucsc.txt", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# FETCH GENE
+# =========================
+def fetch_gene(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    return requests.get(url).json()
+
+# =========================
+# LOAD REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+    pos = 0
+
+    start -= flank
+    end += flank
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if start <= pos <= end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# METASTABLEX ROBUSTO
+# =========================
+def run_pipeline(seq, window):
+    X = extract(seq, window)
+
+    if len(X) < 3:
+        return np.zeros(10)
+
+    if np.std(X) == 0:
+        return np.zeros(len(X))
+
+    try:
+        X_scaled = StandardScaler().fit_transform(X)
+
+        if np.isnan(X_scaled).any():
+            return np.zeros(len(X))
+
+        P = PCA(n_components=2).fit_transform(X_scaled)
+        signal = P[:,0]
+
+    except:
+        # fallback: usa GC direto
+        signal = X[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=10)
+
+    denom = (smooth.max() - smooth.min())
+    if denom == 0:
+        return np.zeros(len(smooth))
+
+    smooth = (smooth - smooth.min()) / denom
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=3)
+
+    if np.max(risk) > 0:
+        risk = risk / np.max(risk)
+
+    return risk
+
+# =========================
+# DNASE PARSER
+# =========================
+def load_dnase(path, chrom, start, end):
+    regions = []
+
+    with open(path) as f:
+        for line in f:
+            parts = line.strip().split()
+
+            if len(parts) < 4:
+                continue
+
+            if parts[1] in [f"chr{chrom}", chrom]:
+                try:
+                    s = int(parts[2])
+                    e = int(parts[3])
+                except:
+                    continue
+
+                if s < end and e > start:
+                    regions.append((s, e))
+
+    return regions
+
+# =========================
+# ANALYSIS
+# =========================
+def analyze_gene(gene_name):
+    print(f"\n🧬 {gene_name}")
+
+    gene = fetch_gene(gene_name)
+    chrom = gene["seq_region_name"]
+    start = gene["start"]
+    end = gene["end"]
+
+    seq = load_region("data/human.fa", chrom, start, end, args.flank)
+    risk = run_pipeline(seq, args.window)
+
+    hotspots = np.where(risk > 0.85)[0]
+
+    dnase = load_dnase("data/dnase_ucsc.txt", chrom, start-args.flank, end+args.flank)
+
+    dnase_windows = set()
+    offset = (start - args.flank)//args.window
+
+    for s, e in dnase:
+        for w in range(s//args.window, e//args.window):
+            dnase_windows.add(w - offset)
+
+    overlap = len(set(hotspots) & dnase_windows)
+
+    n = len(hotspots)
+    p = len(dnase_windows)/len(risk) if len(risk) > 0 else 0
+
+    pval = None
+    if n > 0 and 0 < p < 1:
+        pval = binomtest(overlap, n, p, alternative='greater').pvalue
+
+    print("hotspots:", n)
+    print("overlap:", overlap)
+    print("p-value:", pval)
+
+    # plot
+    plt.figure(figsize=(12,4))
+    plt.plot(risk)
+
+    for w in dnase_windows:
+        plt.axvspan(w, w+1, alpha=0.03)
+
+    plt.title(gene_name)
+    plt.savefig(f"plots/{gene_name}.png", dpi=200)
+    plt.close()
+
+    return (gene_name, n, overlap, pval)
+
+# =========================
+# MAIN
+# =========================
+download_genome()
+download_dnase()
+
+results = []
+
+for g in args.genes:
+    results.append(analyze_gene(g))
+
+print("\n📊 FINAL SUMMARY")
+for r in results:
+    print(r)
 
 
 
@@ -2896,6 +4133,69 @@ if __name__ == "__main__":
 
 
 ================================================================================
+ARQUIVO: fix_dnase_final.py
+================================================================================
+
+import requests
+import gzip
+import os
+
+os.makedirs("data", exist_ok=True)
+
+URLS = [
+    # tentativa 1 (novo UCSC)
+    "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz",
+
+    # fallback (backup mirror)
+    "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz"
+]
+
+gz_path = "data/dnase_ucsc.gz"
+txt_path = "data/dnase_ucsc.txt"
+
+def try_download(url):
+    try:
+        print(f"⬇ trying: {url}")
+        r = requests.get(url, stream=True, timeout=20)
+        r.raise_for_status()
+
+        with open(gz_path, "wb") as f:
+            for chunk in r.iter_content(8192):
+                f.write(chunk)
+
+        return True
+    except Exception as e:
+        print("❌ failed:", e)
+        return False
+
+def download_dnase():
+    if not os.path.exists(gz_path):
+        success = False
+        for url in URLS:
+            if try_download(url):
+                success = True
+                break
+
+        if not success:
+            raise Exception("❌ all download sources failed")
+
+    print("🔍 validating gzip...")
+    with gzip.open(gz_path, "rb") as f:
+        f.read(10)
+
+    if not os.path.exists(txt_path):
+        print("📦 extracting...")
+        with gzip.open(gz_path, "rb") as f_in:
+            with open(txt_path, "wb") as f_out:
+                f_out.write(f_in.read())
+
+    print("✅ DNase ready")
+
+if __name__ == "__main__":
+    download_dnase()
+
+
+================================================================================
 ARQUIVO: genomic_metastablex_final.py
 ================================================================================
 
@@ -3083,6 +4383,239 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(args)
+
+
+
+================================================================================
+ARQUIVO: metastablex_encode_pipeline.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+# =========================
+# SETUP
+# =========================
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+os.makedirs("results", exist_ok=True)
+
+# =========================
+# ARGUMENTS
+# =========================
+parser = argparse.ArgumentParser(description="MetastableX + ENCODE Pipeline")
+
+parser.add_argument("--gene", type=str, required=True)
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+
+args = parser.parse_args()
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+    
+    if not os.path.exists("data/human.fa.gz"):
+        print("⬇ downloading genome...")
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# FETCH GENE
+# =========================
+def fetch_gene(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    r = requests.get(url)
+    return r.json()
+
+# =========================
+# LOAD REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+    pos = 0
+
+    start -= flank
+    end += flank
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if start <= pos <= end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window):
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return risk
+
+# =========================
+# DOWNLOAD ENCODE DNase BED
+# =========================
+def download_dnase():
+    url = "https://www.encodeproject.org/files/ENCFF001EET/@@download/ENCFF001EET.bed.gz"
+    
+    if not os.path.exists("data/dnase.bed.gz"):
+        print("⬇ downloading ENCODE DNase...")
+        r = requests.get(url)
+        with open("data/dnase.bed.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/dnase_ucsc.bed"):
+        with gzip.open("data/dnase.bed.gz", "rb") as f_in:
+            with open("data/dnase_ucsc.bed", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# LOAD BED
+# =========================
+def load_bed(path, chrom, start, end):
+    regions = []
+
+    with open(path) as f:
+        for line in f:
+            parts = line.strip().split("\t")
+            if parts[0] == chrom:
+                s = int(parts[1])
+                e = int(parts[2])
+
+                if s < end and e > start:
+                    regions.append((s, e))
+
+    return regions
+
+# =========================
+# MAIN
+# =========================
+print("🧬 fetching gene...")
+gene = fetch_gene(args.gene)
+
+chrom = gene["seq_region_name"]
+start = gene["start"]
+end = gene["end"]
+
+download_genome()
+download_dnase()
+
+print("📥 loading region...")
+seq = load_region("data/human.fa", chrom, start, end, args.flank)
+
+print("⚙ running MetastableX...")
+risk = run_pipeline(seq, args.window)
+
+# =========================
+# HOTSPOTS
+# =========================
+threshold = 0.85
+hotspots = np.where(risk > threshold)[0]
+
+# =========================
+# LOAD DNASE
+# =========================
+dnase_regions = load_bed("data/dnase_ucsc.bed", chrom, start-args.flank, end+args.flank)
+
+# map DNase to windows
+dnase_windows = set()
+for s,e in dnase_regions:
+    for w in range(s//args.window, e//args.window):
+        dnase_windows.add(w - ((start-args.flank)//args.window))
+
+# =========================
+# OVERLAP
+# =========================
+overlap = len(set(hotspots) & dnase_windows)
+
+n = len(hotspots)
+p = len(dnase_windows)/len(risk)
+
+print("🔥 hotspots:", n)
+print("🧬 DNase overlap:", overlap)
+
+# =========================
+# STATS
+# =========================
+if p > 0 and p < 1 and n > 0:
+    res = binomtest(overlap, n, p, alternative='greater')
+    print("📉 p-value:", res.pvalue)
+
+# =========================
+# PLOT
+# =========================
+plt.figure(figsize=(12,4))
+plt.plot(risk, label="Risk")
+
+# DNase highlight
+for w in dnase_windows:
+    plt.axvspan(w, w+1, alpha=0.1, color='red')
+
+plt.title("Metastable Risk + DNase (ENCODE)")
+plt.savefig("plots/encode_overlay.png", dpi=300)
+plt.close()
+
+print("🚀 DONE")
 
 
 
@@ -3701,36 +5234,54 @@ python pipeline_fixed.py
 
 
 ================================================================================
-ARQUIVO: metastablex_paper_pipeline.py
+ARQUIVO: metastablex_human_hbb.py
 ================================================================================
 
 import numpy as np
-import pandas as pd
-import argparse
-import os
-
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans
 from scipy.ndimage import gaussian_filter1d
-from collections import Counter
+from scipy.stats import binomtest
+import requests, gzip, os
 
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
 
 # =========================
-# FASTA
+# DOWNLOAD HUMAN CHR11
 # =========================
-def load_fasta(path):
+url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+
+if not os.path.exists("data/human.fa.gz"):
+    print("⬇ downloading human genome...")
+    r = requests.get(url)
+    with open("data/human.fa.gz", "wb") as f:
+        f.write(r.content)
+
+if not os.path.exists("data/human.fa"):
+    with gzip.open("data/human.fa.gz", "rb") as f_in:
+        with open("data/human.fa", "wb") as f_out:
+            f_out.write(f_in.read())
+
+# =========================
+# LOAD CHR11 ONLY
+# =========================
+def load_chr11(path, max_len=5_000_000):
     seq = ""
+    reading = False
+
     with open(path) as f:
         for line in f:
-            if not line.startswith(">"):
+            if line.startswith(">"):
+                reading = "chromosome 11" in line.lower()
+                continue
+            if reading:
                 seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
     return seq
-
 
 # =========================
 # FEATURES
@@ -3740,222 +5291,256 @@ def entropy(seq):
     probs = [v/len(seq) for v in counts.values()]
     return -sum(p*np.log2(p+1e-9) for p in probs)
 
-
 def gc(seq):
     return (seq.count("G")+seq.count("C"))/len(seq)
-
 
 def complexity(seq):
     return len(set(seq))/len(seq)
 
-
-def coding_score(seq):
-    start = ["ATG"]
-    stop = ["TAA","TAG","TGA"]
-    score = 0
-
-    for i in range(0, len(seq)-3, 3):
-        codon = seq[i:i+3]
-        if codon in start:
-            score += 2
-        if codon in stop:
-            score -= 1
-
-    return score / (len(seq)/3)
-
-
-# =========================
-# FEATURE EXTRACTION
-# =========================
-def extract_features(seq, window):
+def extract(seq, window):
     feats = []
-
     for i in range(0, len(seq)-window, window):
         w = seq[i:i+window]
-
-        feats.append([
-            gc(w),
-            entropy(w),
-            complexity(w),
-            coding_score(w)
-        ])
-
+        feats.append([gc(w), entropy(w), complexity(w)])
     return np.array(feats)
 
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window=1000):
+
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return smooth, risk
 
 # =========================
-# MULTISCALE
+# LOAD DATA
 # =========================
-def multiscale(seq, windows):
+print("🧬 loading chr11...")
+seq = load_chr11("data/human.fa")
 
-    signals = []
+print("⚙ running...")
+struct, risk = run_pipeline(seq)
 
-    for w in windows:
-        X = extract_features(seq, w)
+# =========================
+# HBB GENE (REAL COORDS)
+# =========================
+# HBB gene (chr11: 5,225,464–5,227,071 GRCh38)
+HBB_start = 5225464
+HBB_end = 5227071
+
+window = 1000
+
+HBB_windows = list(range(HBB_start//window, HBB_end//window))
+
+# =========================
+# HOTSPOTS
+# =========================
+threshold = 0.85
+hotspots = np.where(risk > threshold)[0]
+
+print("🔥 hotspots:", len(hotspots))
+
+# =========================
+# OVERLAP
+# =========================
+overlap = len(set(hotspots) & set(HBB_windows))
+
+n = len(hotspots)
+p = len(HBB_windows)/len(risk)
+
+print("🧬 HBB overlap:", overlap)
+
+# =========================
+# STAT TEST
+# =========================
+if p > 0 and p < 1 and n > 0:
+    res = binomtest(overlap, n, p, alternative='greater')
+    print("📉 p-value:", res.pvalue)
+
+# =========================
+# PLOT
+# =========================
+plt.figure(figsize=(12,4))
+plt.plot(risk, label="Metastable Risk")
+
+# highlight HBB
+for w in HBB_windows:
+    plt.axvspan(w, w+1, alpha=0.3)
+
+plt.title("Metastable Risk — Human chr11 (HBB region highlighted)")
+plt.savefig("plots/human_hbb.png", dpi=300)
+plt.close()
+
+print("🚀 DONE")
+
+
+
+================================================================================
+ARQUIVO: metastablex_paper_pipeline.py
+================================================================================
+
+import argparse, requests, gzip, os, numpy as np, matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+import warnings
+warnings.filterwarnings("ignore")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--genes", nargs="+", required=True)
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+args = parser.parse_args()
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# DOWNLOAD
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+    if not os.path.exists("data/human.fa"):
+        r = requests.get(url)
+        open("data/tmp.gz","wb").write(r.content)
+        with gzip.open("data/tmp.gz","rb") as f: open("data/human.fa","wb").write(f.read())
+
+def download_dnase():
+    url = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz"
+    if not os.path.exists("data/dnase_ucsc.txt"):
+        r = requests.get(url)
+        open("data/tmp_dnase.gz","wb").write(r.content)
+        with gzip.open("data/tmp_dnase.gz","rb") as f: open("data/dnase_ucsc.txt","wb").write(f.read())
+
+# =========================
+# UTILS
+# =========================
+def fetch_gene(g):
+    return requests.get(f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{g}?content-type=application/json").json()
+
+def entropy(s):
+    c = Counter(s)
+    p = [v/len(s) for v in c.values()]
+    return -sum(x*np.log2(x+1e-9) for x in p)
+
+def gc(s): return (s.count("G")+s.count("C"))/len(s)
+def complexity(s): return len(set(s))/len(s)
+
+def extract(seq, w):
+    return np.array([[gc(seq[i:i+w]), entropy(seq[i:i+w]), complexity(seq[i:i+w])]
+                     for i in range(0,len(seq)-w,w)])
+
+def load_region(path, chrom, start, end, flank):
+    seq, read, pos = "", False, 0
+    start-=flank; end+=flank
+    for line in open(path):
+        if line.startswith(">"): read = chrom in line; continue
+        if read:
+            for b in line.strip().upper():
+                if start<=pos<=end: seq+=b
+                pos+=1
+    return seq
+
+def run(seq,w):
+    X = extract(seq,w)
+    if len(X)<3 or np.std(X)==0: return np.zeros(len(X))
+    try:
         X = StandardScaler().fit_transform(X)
+        signal = PCA(2).fit_transform(X)[:,0]
+    except:
+        signal = X[:,0]
+    s = gaussian_filter1d(signal,10)
+    d = s.max()-s.min()
+    if d==0: return np.zeros(len(s))
+    s = (s-s.min())/d
+    r = gaussian_filter1d(np.abs(np.gradient(s)),3)
+    if r.max()>0: r/=r.max()
+    return r
 
-        s = PCA(n_components=1).fit_transform(X).flatten()
-
-        interp = np.interp(
-            np.linspace(0, len(s), num=3000),
-            np.arange(len(s)),
-            s
-        )
-
-        signals.append(interp)
-
-    return np.mean(signals, axis=0)
-
-
-# =========================
-# GFF
-# =========================
-def load_gff(path):
-    genes = []
-    with open(path) as f:
-        for line in f:
-            if line.startswith("#"):
-                continue
-            parts = line.strip().split("\t")
-            if len(parts) >= 5:
-                genes.append((int(parts[3]), int(parts[4])))
-    return genes
-
+def load_dnase(path, chrom, start, end):
+    regs=[]
+    for l in open(path):
+        p=l.split()
+        if len(p)<4: continue
+        if p[1] in [f"chr{chrom}",chrom]:
+            try:
+                s,e=int(p[2]),int(p[3])
+                if s<end and e>start: regs.append((s,e))
+            except: pass
+    return regs
 
 # =========================
 # MAIN
 # =========================
-def main(args):
+download_genome()
+download_dnase()
 
-    os.makedirs("plots", exist_ok=True)
+results=[]
 
-    print("🧬 loading...")
-    seq = load_fasta(args.fasta)
+for g in args.genes:
+    print(f"\n🧬 {g}")
+    gene=fetch_gene(g)
+    chrom,start,end=gene["seq_region_name"],gene["start"],gene["end"]
 
-    print("🔥 multiscale...")
-    signal = multiscale(seq, [500,1500,3000,6000])
+    seq=load_region("data/human.fa",chrom,start,end,args.flank)
+    risk=run(seq,args.window)
 
-    # 🔥 smoothing pesado (ESSENCIAL)
-    smooth = gaussian_filter1d(signal, sigma=40)
-    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+    hotspots=np.where(risk>0.85)[0]
 
-    # =========================
-    # CLUSTER
-    # =========================
-    km = KMeans(n_clusters=3, random_state=42)
-    domain = km.fit_predict(smooth.reshape(-1,1))
+    dnase=load_dnase("data/dnase_ucsc.txt",chrom,start-args.flank,end+args.flank)
+    dnase_w=set()
+    offset=(start-args.flank)//args.window
 
-    # =========================
-    # RISK
-    # =========================
-    risk = np.abs(np.gradient(smooth))
-    risk = gaussian_filter1d(risk, sigma=8)
-    risk = risk / np.max(risk)
+    for s,e in dnase:
+        for w in range(s//args.window,e//args.window):
+            dnase_w.add(w-offset)
 
-    # =========================
-    # HOTSPOTS (🔥 novo)
-    # =========================
-    threshold = np.percentile(risk, 95)
-    hotspots = (risk > threshold).astype(int)
+    overlap=len(set(hotspots)&dnase_w)
+    n=len(hotspots)
+    p=len(dnase_w)/len(risk) if len(risk)>0 else 0
 
-    # =========================
-    # POSITIONS
-    # =========================
-    win = int(len(seq)/len(smooth))
-    pos = np.arange(len(smooth)) * win
+    pval=None
+    if n>0 and 0<p<1:
+        pval=binomtest(overlap,n,p,alternative='greater').pvalue
 
-    df = pd.DataFrame({
-        "pos": pos,
-        "structure": smooth,
-        "risk": risk,
-        "domain": domain,
-        "hotspot": hotspots
-    })
+    sig = (pval is not None and pval < 0.05)
 
-    df.to_csv("genomic_metastablex.csv", index=False)
+    print("hotspots:",n,"overlap:",overlap,"p:",pval,"SIGNIFICANT:",sig)
 
-    # =========================
-    # BED EXPORT
-    # =========================
-    with open("genomic_hotspots.bed","w") as f:
-        for i,row in df.iterrows():
-            if row.hotspot == 1:
-                f.write(f"chr1\t{int(row.pos)}\t{int(row.pos+win)}\tHOTSPOT\n")
+    results.append([g,n,overlap,pval,sig])
 
-    # =========================
-    # PCA (fix real)
-    # =========================
-    X = extract_features(seq, 3000)
-    X = StandardScaler().fit_transform(X)
-    P = PCA(n_components=2).fit_transform(X)
-
-    # =========================
-    # PLOTS
-    # =========================
-    x = df["pos"]
-
-    # PCA correto
-    plt.figure(figsize=(6,6))
-    plt.scatter(P[:,0], P[:,1], c=P[:,0], s=5)
-    plt.gca().set_aspect('equal')
-    plt.title("Genomic Structural Manifold")
-    plt.savefig("plots/pca.png", dpi=300)
+    plt.figure(figsize=(10,3))
+    plt.plot(risk)
+    for w in dnase_w: plt.axvspan(w,w+1,alpha=0.03)
+    plt.title(g)
+    plt.savefig(f"plots/{g}.png",dpi=200)
     plt.close()
 
-    # PAPER
-    fig, axs = plt.subplots(3,1, figsize=(10,8), sharex=True)
+# =========================
+# EXPORT CSV
+# =========================
+import csv
+with open("results.csv","w") as f:
+    writer=csv.writer(f)
+    writer.writerow(["gene","hotspots","overlap","pvalue","significant"])
+    writer.writerows(results)
 
-    axs[0].scatter(P[:,0], P[:,1], c=P[:,0], s=5)
-    axs[0].set_title("A) Structural Manifold")
-    axs[0].set_aspect('equal')
-
-    axs[1].plot(x, smooth)
-    axs[1].set_title("B) Structural Axis")
-
-    axs[2].plot(x, risk)
-    axs[2].scatter(x[hotspots==1], risk[hotspots==1], s=5)
-    axs[2].set_title("C) Metastable Risk + Hotspots")
-
-    plt.tight_layout()
-    plt.savefig("plots/paper.png", dpi=300)
-
-    # =========================
-    # GFF VALIDATION
-    # =========================
-    if args.gff:
-        print("🧬 validating...")
-
-        genes = load_gff(args.gff)
-
-        gene_risk = []
-        background_risk = []
-
-        for _, row in df.iterrows():
-            in_gene = False
-
-            for g_start, g_end in genes:
-                if g_start <= row.pos <= g_end:
-                    in_gene = True
-                    break
-
-            if in_gene:
-                gene_risk.append(row.risk)
-            else:
-                background_risk.append(row.risk)
-
-        print("🔥 mean gene risk:", np.mean(gene_risk))
-        print("🔥 mean background risk:", np.mean(background_risk))
-
-    print("🚀 DONE")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--fasta", required=True)
-    parser.add_argument("--gff", default=None)
-
-    args = parser.parse_args()
-    main(args)
+print("\n📊 RESULTS SAVED -> results.csv")
 
 
 ================================================================================
@@ -4606,6 +6191,472 @@ if __name__ == "__main__":
 
 
 ================================================================================
+ARQUIVO: metastablex_demo_pipeline.py
+================================================================================
+
+import argparse
+import requests
+import gzip
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+
+# =========================
+# ARGS
+# =========================
+parser = argparse.ArgumentParser(description="MetastableX Multi-Gene Demo Pipeline")
+
+parser.add_argument("--genes", nargs="+", required=True,
+                    help="Lista de genes (ex: HBB TP53 BRCA1)")
+
+parser.add_argument("--window", type=int, default=1000)
+parser.add_argument("--flank", type=int, default=200000)
+parser.add_argument("--control", action="store_true",
+                    help="Executa região intergênica como controle")
+
+args = parser.parse_args()
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# DOWNLOAD GENOME
+# =========================
+def download_genome():
+    url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
+
+    if not os.path.exists("data/human.fa.gz"):
+        print("⬇ downloading genome...")
+        r = requests.get(url)
+        with open("data/human.fa.gz", "wb") as f:
+            f.write(r.content)
+
+    if not os.path.exists("data/human.fa"):
+        with gzip.open("data/human.fa.gz", "rb") as f_in:
+            with open("data/human.fa", "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# DOWNLOAD DNASE
+# =========================
+def download_dnase():
+    url = "https://hgdownload.cse.ucsc.edu/goldenPath/hg38/database/wgEncodeRegDnaseClustered.txt.gz"
+
+    gz = "data/dnase_ucsc.gz"
+    txt = "data/dnase_ucsc.txt"
+
+    if not os.path.exists(gz):
+        print("⬇ downloading DNase...")
+        with requests.get(url, stream=True) as r:
+            r.raise_for_status()
+            with open(gz, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+
+    if not os.path.exists(txt):
+        print("📦 extracting DNase...")
+        with gzip.open(gz, "rb") as f_in:
+            with open(txt, "wb") as f_out:
+                f_out.write(f_in.read())
+
+# =========================
+# FETCH GENE
+# =========================
+def fetch_gene(gene):
+    url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene}?content-type=application/json"
+    return requests.get(url).json()
+
+# =========================
+# LOAD REGION
+# =========================
+def load_region(path, chrom, start, end, flank):
+    seq = ""
+    reading = False
+    pos = 0
+
+    start -= flank
+    end += flank
+
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                reading = chrom in line
+                continue
+
+            if reading:
+                line = line.strip().upper()
+                for base in line:
+                    if start <= pos <= end:
+                        seq += base
+                    pos += 1
+
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# METASTABLEX
+# =========================
+def run_pipeline(seq, window):
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=15)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=5)
+    risk = risk / np.max(risk)
+
+    return risk
+
+# =========================
+# DNASE PARSER
+# =========================
+def load_dnase(path, chrom, start, end):
+    regions = []
+
+    with open(path) as f:
+        for line in f:
+            parts = line.strip().split()
+
+            if len(parts) < 4:
+                continue
+
+            chr_name = parts[1]
+
+            if chr_name == f"chr{chrom}" or chr_name == chrom:
+                try:
+                    s = int(parts[2])
+                    e = int(parts[3])
+                except:
+                    continue
+
+                if s < end and e > start:
+                    regions.append((s, e))
+
+    return regions
+
+# =========================
+# RUN PER GENE
+# =========================
+def analyze_gene(gene_name):
+    print(f"\n🧬 PROCESSING {gene_name}")
+
+    gene = fetch_gene(gene_name)
+    chrom = gene["seq_region_name"]
+    start = gene["start"]
+    end = gene["end"]
+
+    seq = load_region("data/human.fa", chrom, start, end, args.flank)
+    risk = run_pipeline(seq, args.window)
+
+    hotspots = np.where(risk > 0.85)[0]
+
+    dnase = load_dnase("data/dnase_ucsc.txt", chrom, start-args.flank, end+args.flank)
+
+    dnase_windows = set()
+    offset = (start - args.flank)//args.window
+
+    for s, e in dnase:
+        for w in range(s//args.window, e//args.window):
+            dnase_windows.add(w - offset)
+
+    overlap = len(set(hotspots) & dnase_windows)
+
+    n = len(hotspots)
+    p = len(dnase_windows)/len(risk) if len(risk) > 0 else 0
+
+    pval = None
+    if n > 0 and p > 0 and p < 1:
+        pval = binomtest(overlap, n, p, alternative='greater').pvalue
+
+    print(f"🔥 hotspots: {n}")
+    print(f"🧬 overlap: {overlap}")
+    print(f"📉 p-value: {pval}")
+
+    # plot
+    plt.figure(figsize=(12,4))
+    plt.plot(risk, label="Risk")
+
+    for w in dnase_windows:
+        plt.axvspan(w, w+1, alpha=0.05)
+
+    plt.title(gene_name)
+    plt.savefig(f"plots/{gene_name}.png", dpi=200)
+    plt.close()
+
+    return n, overlap, pval
+
+# =========================
+# MAIN
+# =========================
+download_genome()
+download_dnase()
+
+results = []
+
+for g in args.genes:
+    res = analyze_gene(g)
+    results.append((g, *res))
+
+print("\n📊 SUMMARY")
+for r in results:
+    print(r)
+
+
+
+================================================================================
+ARQUIVO: metastablex_epigenetics_wavelet.py
+================================================================================
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import binomtest
+import pywt
+import os, requests, gzip
+
+os.makedirs("data", exist_ok=True)
+os.makedirs("plots", exist_ok=True)
+
+# =========================
+# DOWNLOAD DATA (Arabidopsis)
+# =========================
+def download(url, path):
+    if not os.path.exists(path):
+        print("⬇ downloading:", path)
+        r = requests.get(url)
+        with open(path, "wb") as f:
+            f.write(r.content)
+
+# genome
+download(
+"https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/735/GCF_000001735.4_TAIR10.1/GCF_000001735.4_TAIR10.1_genomic.fna.gz",
+"data/genome.fa.gz"
+)
+
+# decompress
+if not os.path.exists("data/genome.fa"):
+    with gzip.open("data/genome.fa.gz", "rb") as f_in:
+        with open("data/genome.fa", "wb") as f_out:
+            f_out.write(f_in.read())
+
+# =========================
+# LOAD FASTA
+# =========================
+def load_fasta(path, max_len=5_000_000):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip().upper()
+                if len(seq) >= max_len:
+                    break
+    return seq
+
+# =========================
+# FEATURES
+# =========================
+def entropy(seq):
+    counts = Counter(seq)
+    probs = [v/len(seq) for v in counts.values()]
+    return -sum(p*np.log2(p+1e-9) for p in probs)
+
+def gc(seq):
+    return (seq.count("G")+seq.count("C"))/len(seq)
+
+def complexity(seq):
+    return len(set(seq))/len(seq)
+
+def extract(seq, window):
+    feats = []
+    for i in range(0, len(seq)-window, window):
+        w = seq[i:i+window]
+        feats.append([gc(w), entropy(w), complexity(w)])
+    return np.array(feats)
+
+# =========================
+# PIPELINE
+# =========================
+def run_pipeline(seq, window=1500):
+
+    X = extract(seq, window)
+    X_scaled = StandardScaler().fit_transform(X)
+
+    P = PCA(n_components=2).fit_transform(X_scaled)
+
+    signal = P[:,0]
+
+    smooth = gaussian_filter1d(signal, sigma=20)
+    smooth = (smooth - smooth.min())/(smooth.max()-smooth.min())
+
+    risk = np.abs(np.gradient(smooth))
+    risk = gaussian_filter1d(risk, sigma=6)
+    risk = risk / np.max(risk)
+
+    return X, smooth, risk
+
+# =========================
+# WAVELET ANALYSIS
+# =========================
+def wavelet_analysis(signal):
+
+    coeffs = pywt.wavedec(signal, 'db4', level=5)
+
+    energies = []
+    for c in coeffs:
+        energies.append(np.sum(c**2))
+
+    return coeffs, energies
+
+# =========================
+# PEAK DETECTION
+# =========================
+def detect_peaks(risk, threshold=0.8):
+    return np.where(risk > threshold)[0]
+
+# =========================
+# FAKE EPIGENETIC SIGNAL (proxy)
+# =========================
+def generate_fake_epigenetics(n):
+    # simulate open chromatin regions
+    signal = np.random.rand(n)
+    signal = gaussian_filter1d(signal, sigma=10)
+    return signal
+
+# =========================
+# MAIN
+# =========================
+print("🧬 loading genome...")
+seq = load_fasta("data/genome.fa")
+
+print("⚙ running pipeline...")
+X, struct, risk = run_pipeline(seq)
+
+# =========================
+# SHUFFLE CONTROL
+# =========================
+print("🎲 shuffle...")
+seq_list = list(seq)
+np.random.shuffle(seq_list)
+seq_shuf = "".join(seq_list)
+
+_, struct_s, risk_s = run_pipeline(seq_shuf)
+
+# =========================
+# WAVELET
+# =========================
+print("🌊 wavelet...")
+coeffs, energies = wavelet_analysis(struct)
+
+# =========================
+# PEAKS
+# =========================
+peaks = detect_peaks(risk)
+print("🔥 peaks:", len(peaks))
+
+# =========================
+# EPIGENETIC PROXY
+# =========================
+epi = generate_fake_epigenetics(len(risk))
+
+epi_regions = np.where(epi > 0.7)[0]
+
+# overlap
+overlap = len(set(peaks) & set(epi_regions))
+n = len(peaks)
+p = len(epi_regions)/len(risk)
+
+print("📊 overlap:", overlap)
+
+# =========================
+# STAT TEST
+# =========================
+if p > 0 and p < 1:
+    res = binomtest(overlap, n, p, alternative='greater')
+    print("📉 p-value:", res.pvalue)
+
+# =========================
+# PLOTS
+# =========================
+
+# STRUCTURE
+plt.figure()
+plt.plot(struct)
+plt.title("Structural Axis")
+plt.savefig("plots/structure.png", dpi=300)
+plt.close()
+
+# RISK
+plt.figure()
+plt.plot(risk, label="Real")
+plt.plot(risk_s, label="Shuffle", alpha=0.6)
+plt.legend()
+plt.title("Metastable Risk")
+plt.savefig("plots/risk.png", dpi=300)
+plt.close()
+
+# DISTRIBUTION
+plt.figure()
+sns.kdeplot(risk, label="Real")
+sns.kdeplot(risk_s, label="Shuffle")
+plt.legend()
+plt.savefig("plots/distribution.png", dpi=300)
+plt.close()
+
+# WAVELET ENERGY
+plt.figure()
+plt.plot(energies)
+plt.title("Wavelet Energy by Scale")
+plt.savefig("plots/wavelet.png", dpi=300)
+plt.close()
+
+# PEAKS
+plt.figure()
+plt.plot(risk)
+plt.scatter(peaks, risk[peaks])
+plt.title("Hotspots")
+plt.savefig("plots/hotspots.png", dpi=300)
+plt.close()
+
+print("🚀 DONE")
+
+
+
+================================================================================
 ARQUIVO: ecoli_pipeline.py
 ================================================================================
 
@@ -4745,6 +6796,1134 @@ else:
     print("❌ no enrichment")
 
 print("\n🚀 DONE")
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/manage.py
+================================================================================
+
+#!/usr/bin/env python
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+
+def main():
+    """Run administrative tasks."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/tests.py
+================================================================================
+
+from django.test import TestCase
+
+# Create your tests here.
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/llama.py
+================================================================================
+
+import requests
+
+def interpret_metrics(gene, result):
+    prompt = f"""
+You are a computational genomics researcher.
+
+Analyze the following results:
+
+Gene: {gene}
+
+Metrics:
+- Mean risk: {sum(result["risk"])/len(result["risk"]):.4f}
+- Hotspots: {len(result["hotspots"])}
+- p-value: {result["pvalue"]}
+
+Explain:
+
+1. What the structural behavior suggests
+2. Whether there is evidence of organization or randomness
+3. Biological interpretation
+4. Limitations
+
+Answer in a concise scientific paragraph.
+"""
+
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "llama3",
+            "prompt": prompt,
+            "stream": False
+        }
+    )
+
+    return response.json()["response"]
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/admin.py
+================================================================================
+
+from django.contrib import admin
+
+# Register your models here.
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/views.py
+================================================================================
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from .models import Analysis
+from .serializers import AnalysisSerializer
+from .llama import interpret_metrics
+from .paper import generate_results_section
+import numpy as np
+
+# =========================
+# PIPELINE MOCK (ou substitua pelo real)
+# =========================
+def fake_pipeline(gene):
+    x = np.linspace(0,10,200)
+    risk = np.abs(np.sin(x + hash(gene)%10))
+    hotspots = np.where(risk > 0.8)[0]
+
+    return {
+        "risk": risk.tolist(),
+        "hotspots": hotspots.tolist(),
+        "pvalue": float(np.random.rand())
+    }
+
+# =========================
+# RUN ANALYSIS
+# =========================
+@api_view(["POST"])
+def run_metastablex(request):
+    genes = request.data.get("genes", [])
+    results = []
+
+    for g in genes:
+        res = fake_pipeline(g)
+
+        interpretation = interpret_metrics(g, res)
+
+        Analysis.objects.create(
+            gene=g,
+            result={**res, "interpretation": interpretation},
+            metadata={}
+        )
+
+        results.append({
+            "gene": g,
+            **res,
+            "interpretation": interpretation
+        })
+
+    return Response({"results": results})
+
+# =========================
+# HISTÓRICO
+# =========================
+@api_view(["GET"])
+def list_analyses(request):
+    qs = Analysis.objects.all().order_by("-created_at")
+    serializer = AnalysisSerializer(qs, many=True)
+    return Response(serializer.data)
+
+# =========================
+# PAPER
+# =========================
+@api_view(["POST"])
+def generate_paper(request):
+    genes = request.data.get("genes", [])
+    results = []
+
+    for g in genes:
+        res = fake_pipeline(g)
+        results.append({
+            "gene": g,
+            **res
+        })
+
+    paper = generate_results_section(results)
+
+    return Response({
+        "results": results,
+        "paper": paper
+    })
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/apps.py
+================================================================================
+
+from django.apps import AppConfig
+
+
+class ApiConfig(AppConfig):
+    name = 'api'
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/models.py
+================================================================================
+
+from django.db import models
+
+class Analysis(models.Model):
+    gene = models.CharField(max_length=50)
+
+    # 🔥 JSONB fields
+    result = models.JSONField()   # risk, hotspots, etc
+    metadata = models.JSONField() # window, flank, params
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.gene
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/paper.py
+================================================================================
+
+import requests
+
+def generate_results_section(all_results):
+    summary = ""
+
+    for r in all_results:
+        summary += f"""
+Gene: {r['gene']}
+Hotspots: {len(r['hotspots'])}
+Mean risk: {sum(r['risk'])/len(r['risk']):.4f}
+p-value: {r['pvalue']}
+"""
+
+    prompt = f"""
+You are writing the RESULTS section of a scientific paper in computational genomics.
+
+Based on the following experimental results across multiple genes:
+
+{summary}
+
+Write a formal scientific Results section.
+
+Requirements:
+- No bullet points
+- No informal language
+- Interpret patterns across genes
+- Mention variability and statistical significance
+- Discuss absence of signal if present
+- Around 3–6 paragraphs
+
+Tone: academic, Nature-level.
+"""
+
+    response = requests.post(
+        "http://localhost:11434/api/generate",
+        json={
+            "model": "llama3",
+            "prompt": prompt,
+            "stream": False
+        }
+    )
+
+    return response.json()["response"]
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/serializers.py
+================================================================================
+
+from rest_framework import serializers
+from .models import Analysis
+
+class AnalysisSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Analysis
+        fields = '__all__'
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/services/metastablex.py
+================================================================================
+
+import numpy as np
+
+def fake_pipeline(gene):
+    x = np.linspace(0, 10, 200)
+    risk = np.abs(np.sin(x + hash(gene)%10))
+
+    hotspots = np.where(risk > 0.8)[0]
+
+    return {
+        "gene": gene,
+        "risk": risk.tolist(),
+        "hotspots": hotspots.tolist(),
+        "pvalue": float(np.random.rand())
+    }
+
+def run_analysis(genes):
+    return [fake_pipeline(g) for g in genes]
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/migrations/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/api/migrations/0001_initial.py
+================================================================================
+
+# Generated by Django 6.0.3 on 2026-03-29 11:53
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = [
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Analysis',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('gene', models.CharField(max_length=50)),
+                ('result', models.JSONField()),
+                ('metadata', models.JSONField()),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+            ],
+        ),
+    ]
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/backend/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/backend/urls.py
+================================================================================
+
+from django.urls import path
+from api.views import run_metastablex, list_analyses, generate_paper
+
+urlpatterns = [
+    path('api/run/', run_metastablex),
+    path('api/analyses/', list_analyses),
+    path('api/paper/', generate_paper),
+]
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/backend/wsgi.py
+================================================================================
+
+"""
+WSGI config for backend project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+
+application = get_wsgi_application()
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/backend/settings.py
+================================================================================
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = 'dev'
+DEBUG = True
+ALLOWED_HOSTS = []
+
+# 🚫 SEM ADMIN / AUTH
+INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'corsheaders',
+    'api',
+]
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+ROOT_URLCONF = 'backend.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'APP_DIRS': True,
+        'OPTIONS': {},
+    },
+]
+
+WSGI_APPLICATION = 'backend.wsgi.application'
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'metastablex',
+        'USER': 'metauser',
+        'PASSWORD': 'meta123',
+        'HOST': 'localhost',
+        'PORT': '5432',
+    }
+}
+
+# 🔥 DESATIVA AUTH DO DRF
+REST_FRAMEWORK = {
+    'UNAUTHENTICATED_USER': None,
+}
+
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'UTC'
+STATIC_URL = 'static/'
+
+
+================================================================================
+ARQUIVO: metastablex_app/backend/backend/asgi.py
+================================================================================
+
+"""
+ASGI config for backend project.
+
+It exposes the ASGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+"""
+
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+
+application = get_asgi_application()
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/README.md
+================================================================================
+
+# Getting Started with Create React App
+
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+
+## Available Scripts
+
+In the project directory, you can run:
+
+### `npm start`
+
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+
+The page will reload when you make changes.\
+You may also see any lint errors in the console.
+
+### `npm test`
+
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+
+### `npm run build`
+
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
+
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
+
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+
+### `npm run eject`
+
+**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+
+If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+
+You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+
+## Learn More
+
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+
+To learn React, check out the [React documentation](https://reactjs.org/).
+
+### Code Splitting
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+
+### Analyzing the Bundle Size
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+
+### Making a Progressive Web App
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+
+### Advanced Configuration
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+
+### Deployment
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+
+### `npm run build` fails to minify
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/manage.py
+================================================================================
+
+#!/usr/bin/env python
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+
+def main():
+    """Run administrative tasks."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/tests.py
+================================================================================
+
+from django.test import TestCase
+
+# Create your tests here.
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/admin.py
+================================================================================
+
+from django.contrib import admin
+
+# Register your models here.
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/views.py
+================================================================================
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(["POST"])
+def run_metastablex(request):
+    genes = request.data.get("genes", [])
+    return Response({"genes_received": genes})
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/apps.py
+================================================================================
+
+from django.apps import AppConfig
+
+
+class ApiConfig(AppConfig):
+    name = 'api'
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/models.py
+================================================================================
+
+from django.db import models
+
+# Create your models here.
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/api/migrations/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/backend/__init__.py
+================================================================================
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/backend/urls.py
+================================================================================
+
+from django.urls import path
+from api.views import run_metastablex
+
+urlpatterns = [
+    path('api/run/', run_metastablex),
+]
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/backend/wsgi.py
+================================================================================
+
+"""
+WSGI config for backend project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/wsgi/
+"""
+
+import os
+
+from django.core.wsgi import get_wsgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+
+application = get_wsgi_application()
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/backend/settings.py
+================================================================================
+
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+SECRET_KEY = 'dev'
+DEBUG = True
+ALLOWED_HOSTS = []
+
+INSTALLED_APPS = [
+    'django.contrib.contenttypes',
+    'django.contrib.staticfiles',
+    'rest_framework',
+    'corsheaders',
+    'api',
+]
+
+MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+]
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+ROOT_URLCONF = 'backend.urls'
+
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'APP_DIRS': True,
+        'OPTIONS': {},
+    },
+]
+
+WSGI_APPLICATION = 'backend.wsgi.application'
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+LANGUAGE_CODE = 'en-us'
+TIME_ZONE = 'UTC'
+STATIC_URL = 'static/'
+
+REST_FRAMEWORK = {
+    'UNAUTHENTICATED_USER': None,
+}
+
+REST_FRAMEWORK = {
+    'UNAUTHENTICATED_USER': None,
+}
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/metastablex_app/backend/backend/asgi.py
+================================================================================
+
+"""
+ASGI config for backend project.
+
+It exposes the ASGI callable as a module-level variable named ``application``.
+
+For more information on this file, see
+https://docs.djangoproject.com/en/6.0/howto/deployment/asgi/
+"""
+
+import os
+
+from django.core.asgi import get_asgi_application
+
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
+
+application = get_asgi_application()
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/Interpretation.js
+================================================================================
+
+export default function Interpretation({ text }) {
+  return (
+    <div className="bg-black border border-green-500 p-4 rounded mt-4">
+      <h3 className="text-green-400 mb-2">AI Interpretation</h3>
+      <p className="text-sm whitespace-pre-line">{text}</p>
+    </div>
+  );
+}
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/setupTests.js
+================================================================================
+
+// jest-dom adds custom jest matchers for asserting on DOM nodes.
+// allows you to do things like:
+// expect(element).toHaveTextContent(/react/i)
+// learn more: https://github.com/testing-library/jest-dom
+import '@testing-library/jest-dom';
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/Plots.js
+================================================================================
+
+import Plot from "react-plotly.js";
+
+export const RiskPlot = ({ risk }) =>
+  <Plot data={[{ y: risk, type: "scatter", mode: "lines" }]} layout={{ title: "Risk Curve" }} />;
+
+export const Histogram = ({ risk }) =>
+  <Plot data={[{ x: risk, type: "histogram" }]} layout={{ title: "Distribution" }} />;
+
+export const CDF = ({ risk }) => {
+  const s = [...risk].sort((a,b)=>a-b);
+  return <Plot data={[{ x: s, y: s.map((_,i)=>i/s.length) }]} layout={{ title: "CDF" }} />;
+};
+
+export const Box = ({ risk }) =>
+  <Plot data={[{ y: risk, type: "box" }]} layout={{ title: "Boxplot" }} />;
+
+export const Heatmap = ({ risk }) =>
+  <Plot data={[{ z:[risk], type:"heatmap" }]} layout={{ title:"Heatmap" }} />;
+
+export const Autocorr = ({ risk }) =>
+  <Plot data={[{ x:risk.slice(0,-1), y:risk.slice(1), mode:"markers" }]} layout={{ title:"Autocorrelation" }} />;
+
+export const FFT = ({ risk }) =>
+  <Plot data={[{ y:risk.map((v,i)=>Math.abs(Math.sin(i))) }]} layout={{ title:"FFT approx" }} />;
+
+export const Hotspots = ({ hotspots }) =>
+  <Plot data={[{ x:hotspots, y:hotspots.map(()=>1), mode:"markers" }]} layout={{ title:"Hotspots" }} />;
+
+export const Smooth = ({ risk }) => {
+  const s = risk.map((v,i)=>(risk[i-1]||v + v + (risk[i+1]||v))/3);
+  return <Plot data={[{ y:s }]} layout={{ title:"Smoothed" }} />;
+};
+
+export const PCAPlot = ({ risk }) =>
+  <Plot data={[{ x:risk.slice(0,100), y:risk.slice(100,200)||risk.slice(0,100), mode:"markers" }]} layout={{ title:"PCA approx" }} />;
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/Paper.js
+================================================================================
+
+export default function Paper({ text }) {
+  return (
+    <div>
+      <h2 className="text-2xl mb-4 text-purple-400">
+        Generated Results Section
+      </h2>
+      <p className="whitespace-pre-line text-sm text-gray-300">
+        {text}
+      </p>
+    </div>
+  );
+}
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/index.js
+================================================================================
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import './index.css';
+import App from './App';
+import reportWebVitals from './reportWebVitals';
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// If you want to start measuring performance in your app, pass a function
+// to log results (for example: reportWebVitals(console.log))
+// or send to an analytics endpoint. Learn more: https://bit.ly/CRA-vitals
+reportWebVitals();
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/index.css
+================================================================================
+
+
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/reportWebVitals.js
+================================================================================
+
+const reportWebVitals = onPerfEntry => {
+  if (onPerfEntry && onPerfEntry instanceof Function) {
+    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
+      getCLS(onPerfEntry);
+      getFID(onPerfEntry);
+      getFCP(onPerfEntry);
+      getLCP(onPerfEntry);
+      getTTFB(onPerfEntry);
+    });
+  }
+};
+
+export default reportWebVitals;
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/App.css
+================================================================================
+
+.App {
+  text-align: center;
+}
+
+.App-logo {
+  height: 40vmin;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .App-logo {
+    animation: App-logo-spin infinite 20s linear;
+  }
+}
+
+.App-header {
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
+}
+
+.App-link {
+  color: #61dafb;
+}
+
+@keyframes App-logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/App.test.js
+================================================================================
+
+import { render, screen } from '@testing-library/react';
+import App from './App';
+
+test('renders learn react link', () => {
+  render(<App />);
+  const linkElement = screen.getByText(/learn react/i);
+  expect(linkElement).toBeInTheDocument();
+});
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/History.js
+================================================================================
+
+import React, { useEffect, useState } from "react";
+
+function History() {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    fetch("http://localhost:8000/api/analyses/")
+      .then(res => res.json())
+      .then(setData);
+  }, []);
+
+  return (
+    <div>
+      <h2>Analysis History</h2>
+
+      <table border="1">
+        <thead>
+          <tr>
+            <th>Gene</th>
+            <th>p-value</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((d, i) => (
+            <tr key={i}>
+              <td>{d.gene}</td>
+              <td>{d.result.pvalue}</td>
+              <td>{d.created_at}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default History;
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/App.js
+================================================================================
+
+import React, { useState } from "react";
+import {
+  RiskPlot, Histogram, CDF, Box,
+  Heatmap, Autocorr, FFT,
+  Hotspots, Smooth, PCAPlot
+} from "./Plots";
+import Interpretation from "./Interpretation";
+import Paper from "./Paper";
+import "./index.css";
+function App() {
+  const [genes, setGenes] = useState("");
+  const [results, setResults] = useState([]);
+  const [paper, setPaper] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const runAnalysis = async () => {
+    setLoading(true);
+
+    const res = await fetch("http://127.0.0.1:8000/api/run/", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        genes: genes.trim().split(/\s+/)
+      })
+    });
+
+    const data = await res.json();
+    setResults(data.results || []);
+    setPaper("");
+    setLoading(false);
+  };
+
+  const generatePaper = async () => {
+    setLoading(true);
+
+    const res = await fetch("http://127.0.0.1:8000/api/paper/", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        genes: genes.trim().split(/\s+/)
+      })
+    });
+
+    const data = await res.json();
+    setPaper(data.paper);
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen p-6">
+
+      <h1 className="text-4xl font-bold mb-2">
+        MetastableX
+      </h1>
+
+      <p className="text-gray-400 mb-6">
+        Structural Genomics + AI
+      </p>
+
+      <div className="flex gap-4 mb-6">
+        <input
+          className="bg-gray-900 border border-gray-700 px-4 py-2 rounded w-96"
+          placeholder="HBB TP53 BRCA1"
+          value={genes}
+          onChange={(e)=>setGenes(e.target.value)}
+        />
+
+        <button onClick={runAnalysis} className="bg-blue-600 px-4 py-2 rounded">
+          Run
+        </button>
+
+        <button onClick={generatePaper} className="bg-purple-600 px-4 py-2 rounded">
+          Paper
+        </button>
+      </div>
+
+      {loading && <p className="text-yellow-400">Processing...</p>}
+
+      {results.map((r)=>(
+        <div key={r.gene} className="bg-gray-900 p-6 rounded mb-8 border border-gray-800">
+
+          <h2 className="text-xl mb-4">{r.gene}</h2>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            <RiskPlot risk={r.risk}/>
+            <Smooth risk={r.risk}/>
+            <Histogram risk={r.risk}/>
+            <CDF risk={r.risk}/>
+            <Box risk={r.risk}/>
+            <Heatmap risk={r.risk}/>
+            <Autocorr risk={r.risk}/>
+            <FFT risk={r.risk}/>
+            <PCAPlot risk={r.risk}/>
+            <Hotspots hotspots={r.hotspots}/>
+          </div>
+
+          <div className="mt-4 text-sm text-gray-400">
+            <p>Hotspots: {r.hotspots.length}</p>
+            <p>p-value: {r.pvalue}</p>
+          </div>
+
+          {r.interpretation && <Interpretation text={r.interpretation}/>}
+        </div>
+      ))}
+
+      {paper && (
+        <div className="bg-gray-900 p-6 rounded border border-gray-800">
+          <Paper text={paper}/>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+export default App;
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/src/styles/input.css
+================================================================================
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+================================================================================
+ARQUIVO: metastablex_app/frontend/public/index.html
+================================================================================
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MetastableX</title>
+
+  <!-- ✅ TAILWIND CDN (SEM BUILD, SEM ERRO) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+</head>
+<body class="bg-gray-950 text-gray-200">
+  <div id="root"></div>
+</body>
+</html>
 
 
 ================================================================================
